@@ -7,3 +7,4 @@ license.workspace = true
 [dependencies]
 forge-runtime = { path = "../forge-runtime" }
 tracing = "0.1.44"
+thiserror = "2.0.19"
