@@ -1,5 +1,1 @@
-pub enum AppEvent {
-    AppStarted,
-    AppTick,
-    AppShutdown,
-}
+pub enum AppEvent {}
