@@ -36,7 +36,7 @@ forge/
     └── forge-workspace/
 ```
 
-`forge-runtime` est le crate le plus avancé actuellement. `forge-workspace` porte désormais `Workspace` (ADR-0008). Les autres (`forge-editor`, `forge-ui`, `forge-tui`, `forge-command`, `forge-cli`) sont encore des squelettes vides.
+`forge-runtime` est le crate le plus avancé actuellement. `forge-workspace` porte désormais `Workspace` (ADR-0008). `forge-editor` porte `Editor`, premier vrai `Plugin` enregistré par le binaire (ADR-0009). Les autres (`forge-ui`, `forge-tui`, `forge-command`, `forge-cli`) sont encore des squelettes vides.
 
 ## Architecture du runtime
 
@@ -71,7 +71,7 @@ forge-runtime
 - **Signal handling dans le runtime** (ADR-0006) : l'écoute de Ctrl+C / SIGTERM est démarrée automatiquement par le `Runtime` lui-même (pas par le binaire). `signal.rs` est dans `forge-runtime`, module privé (`mod signal;`, pas `pub mod`).
 - **Chargement de configuration** (ADR-0007) : `Config::load()` fusionne le fichier XDG utilisateur (`dirs::config_dir()/forge/config.toml`) et `./forge.toml` (projet, cwd) — le projet écrase l'utilisateur champ par champ. Fichier absent ou invalide → repli silencieux sur `Config::default()` (un `tracing::warn!` est émis en cas d'erreur de parsing). Jamais d'échec bloquant.
 - **Workspace optionnel** (ADR-0008) : `Workspace::open(root)` valide que la racine existe et est un dossier. `Config.workspace_root` absent ou invalide → le runtime démarre avec `workspace: None` (`tracing::warn!` sur erreur), jamais bloquant — même principe que ADR-0007. v1 minimal : `Workspace` ne porte que sa racine, pas de listing de fichiers.
-- **Plugins statiques** (ADR-0009) : trait `Plugin` avec un seul hook `init(&mut self, context: &RuntimeContext)`, enregistré via `Runtime::register_plugin(Box<dyn Plugin>)` avant `run()`. Compilés dans le binaire, pas de chargement dynamique. Le binaire `forge` n'enregistre encore aucun plugin réel (aucun consommateur concret pour l'instant).
+- **Plugins statiques** (ADR-0009) : trait `Plugin` avec un seul hook `init(&mut self, context: &RuntimeContext)`, enregistré via `Runtime::register_plugin(Box<dyn Plugin>)` avant `run()`. Compilés dans le binaire, pas de chargement dynamique. `forge-editor::Editor` est le premier consommateur, enregistré dans `main.rs`.
 - **`spawn` interne, pas exposé** : `Runtime::spawn` / `TaskManager::spawn` sont `pub(crate)`. Les modules externes ne doivent jamais pouvoir lancer des tâches tokio arbitraires sur le runtime — ils passent par des méthodes dédiées (ex: `register_signal_handler`) ou par `RuntimeContext`.
 
 ### Flux de shutdown
@@ -105,7 +105,7 @@ transition_to(Stopped)
 
 ## Prochaines étapes envisagées (non commencées)
 
-- Aucune pour l'instant : le prochain vrai consommateur de `Plugin` (ex: `forge-editor`) reste à définir.
+- Aucune pour l'instant : `forge-editor::Editor` ne fait encore que logger l'état du workspace à l'init — reste à définir sa vraie logique (buffers, fichiers ouverts, etc.).
 
 ## Conventions de travail
 
