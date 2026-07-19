@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use tokio::task::{JoinHandle, JoinSet};
+use tokio::task::JoinSet;
 
 pub struct TaskManager {
     tasks: JoinSet<()>,
