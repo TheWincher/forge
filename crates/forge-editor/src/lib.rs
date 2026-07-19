@@ -1,14 +1,22 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
+use forge_runtime::{context::RuntimeContext, plugin::Plugin};
+
+pub struct Editor;
+
+impl Editor {
+    pub fn new() -> Self {
+        Self {}
+    }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+impl Plugin for Editor {
+    fn init(&mut self, context: &RuntimeContext) {
+        match context.workspace() {
+            Some(workspace) => {
+                tracing::debug!("Have a workspace: {:?}", workspace.root());
+            }
+            None => {
+                tracing::debug!("Haven't workspace");
+            }
+        }
     }
 }

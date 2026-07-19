@@ -56,6 +56,7 @@ name = "forge"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "forge-editor",
  "forge-runtime",
  "tracing-subscriber",
 ]
@@ -81,6 +82,10 @@ version = "0.1.0"
 [[package]]
 name = "forge-editor"
 version = "0.1.0"
+dependencies = [
+ "forge-runtime",
+ "tracing",
+]
 
 [[package]]
 name = "forge-runtime"

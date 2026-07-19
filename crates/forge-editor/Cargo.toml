@@ -5,3 +5,5 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+forge-runtime = { path = "../forge-runtime" }
+tracing = "0.1.44"
