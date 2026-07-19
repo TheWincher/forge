@@ -1,0 +1,13 @@
+[package]
+name = "forge-runtime"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+forge-core = { path = "../forge-core" }
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "macros",
+    "sync",
+    "time"
+] }
