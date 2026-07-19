@@ -1,1 +1,4 @@
-pub enum AppEvent {}
+pub enum AppEvent {
+    Started,
+    ShutdownRequested,
+}

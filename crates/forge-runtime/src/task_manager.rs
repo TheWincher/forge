@@ -1,1 +1,1 @@
-pub enum AppTask {}
+pub struct TaskManager {}
