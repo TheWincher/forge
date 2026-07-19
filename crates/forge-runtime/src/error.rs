@@ -11,4 +11,7 @@ pub enum RuntimeError {
 
     #[error("Failed to send event: {0}")]
     SendEventFailed(TrySendError<AppEvent>),
+
+    #[error("Signal error: {0}")]
+    SignalError(#[from] io::Error),
 }
