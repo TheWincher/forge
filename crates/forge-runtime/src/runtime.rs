@@ -40,14 +40,14 @@ impl Runtime {
 
     pub fn run(&mut self) -> Result<(), RuntimeError> {
         self.transition_to(RuntimeState::Starting);
+        let _guard = self.tokio_runtime.enter();
         self.enable_signal_handler();
-        self.transition_to(RuntimeState::Running);
 
+        self.transition_to(RuntimeState::Running);
         let event_loop = Self::event_loop(&mut self.event_receiver);
         self.tokio_runtime.block_on(event_loop)?;
 
         self.transition_to(RuntimeState::Stopping);
-
         let shutdown = self.task_manager.shutdown(Duration::from_secs(5));
         self.tokio_runtime.block_on(shutdown);
 
