@@ -1,5 +1,5 @@
 pub enum AppEvent {
     AppStarted,
     AppTick,
-    AppShutdown
+    AppShutdown,
 }
