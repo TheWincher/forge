@@ -31,11 +31,30 @@ impl Runtime {
         Ok(runtime)
     }
 
-    pub fn run(&self) {}
-
-    pub fn shutdown(&self) {}
+    pub fn run(&mut self) -> Result<(), RuntimeError> {
+        self.tokio_runtime
+            .block_on(Self::event_loop(&mut self.event_receiver))
+    }
 
     pub fn handle(&self) -> RuntimeHandle {
         RuntimeHandle::new(&self.event_sender)
+    }
+
+    async fn event_loop(receiver: &mut Receiver<AppEvent>) -> Result<(), RuntimeError> {
+        loop {
+            let event_opt = receiver.recv().await;
+            if let Some(event) = event_opt {
+                match event {
+                    AppEvent::ShutdownRequested => {
+                        break;
+                    }
+                }
+            } else {
+                tracing::warn!("Event channel closed");
+                break;
+            }
+        }
+
+        Ok(())
     }
 }
