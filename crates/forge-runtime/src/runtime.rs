@@ -1,10 +1,13 @@
 use std::time::Duration;
 
+use forge_config::Config;
+use forge_workspace::Workspace;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 
 use crate::{
-    application::Application, error::RuntimeError, event::AppEvent, handle::RuntimeHandle,
-    lifecycle::RuntimeState, signal::wait_for_shutdown, task_manager::TaskManager,
+    application::Application, context::RuntimeContext, error::RuntimeError, event::AppEvent,
+    handle::RuntimeHandle, lifecycle::RuntimeState, signal::wait_for_shutdown,
+    task_manager::TaskManager,
 };
 
 enum RuntimeAction {
@@ -19,6 +22,8 @@ pub struct Runtime {
     tokio_runtime: tokio::runtime::Runtime,
     event_sender: Sender<AppEvent>,
     event_receiver: Receiver<AppEvent>,
+    config: Config,
+    workspace: Option<Workspace>,
 }
 
 impl Runtime {
@@ -28,6 +33,19 @@ impl Runtime {
 
         let (sender, receiver) = mpsc::channel::<AppEvent>(100);
 
+        let config = Config::load();
+        let workspace =
+            config
+                .workspace_root
+                .clone()
+                .and_then(|root| match Workspace::open(root) {
+                    Ok(workspace) => Some(workspace),
+                    Err(error) => {
+                        tracing::warn!(%error, "Failed to open workspace");
+                        None
+                    }
+                });
+
         Ok(Self {
             state: RuntimeState::Created,
             app: Application::new(),
@@ -35,7 +53,13 @@ impl Runtime {
             tokio_runtime,
             event_sender: sender,
             event_receiver: receiver,
+            config,
+            workspace,
         })
+    }
+
+    pub fn context(&self) -> RuntimeContext {
+        RuntimeContext::new(self.handle(), self.config.clone(), self.workspace.clone())
     }
 
     pub fn run(&mut self) -> Result<(), RuntimeError> {

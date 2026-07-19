@@ -6,6 +6,8 @@ license.workspace = true
 
 [dependencies]
 forge-core = { path = "../forge-core" }
+forge-config = { path = "../forge-config" }
+forge-workspace = { path = "../forge-workspace" }
 tokio = { version = "1", features = [
     "rt-multi-thread",
     "macros",

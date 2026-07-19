@@ -86,7 +86,9 @@ version = "0.1.0"
 name = "forge-runtime"
 version = "0.1.0"
 dependencies = [
+ "forge-config",
  "forge-core",
+ "forge-workspace",
  "thiserror",
  "tokio",
  "tracing",
