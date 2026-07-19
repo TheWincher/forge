@@ -6,7 +6,7 @@ use tokio::sync::mpsc::{self, Receiver, Sender};
 
 use crate::{
     application::Application, context::RuntimeContext, error::RuntimeError, event::AppEvent,
-    handle::RuntimeHandle, lifecycle::RuntimeState, signal::wait_for_shutdown,
+    handle::RuntimeHandle, lifecycle::RuntimeState, plugin::Plugin, signal::wait_for_shutdown,
     task_manager::TaskManager,
 };
 
@@ -24,6 +24,7 @@ pub struct Runtime {
     event_receiver: Receiver<AppEvent>,
     config: Config,
     workspace: Option<Workspace>,
+    plugins: Vec<Box<dyn Plugin>>,
 }
 
 impl Runtime {
@@ -55,6 +56,7 @@ impl Runtime {
             event_receiver: receiver,
             config,
             workspace,
+            plugins: vec![],
         })
     }
 
@@ -65,6 +67,7 @@ impl Runtime {
     pub fn run(&mut self) -> Result<(), RuntimeError> {
         self.transition_to(RuntimeState::Starting);
         let _guard = self.tokio_runtime.enter();
+        self.init_plugins();
         self.enable_signal_handler();
 
         self.transition_to(RuntimeState::Running);
@@ -82,6 +85,10 @@ impl Runtime {
 
     pub fn handle(&self) -> RuntimeHandle {
         RuntimeHandle::new(&self.event_sender)
+    }
+
+    pub fn register_plugin(&mut self, plugin: Box<dyn Plugin>) {
+        self.plugins.push(plugin);
     }
 
     async fn event_loop(receiver: &mut Receiver<AppEvent>) -> Result<(), RuntimeError> {
@@ -107,6 +114,13 @@ impl Runtime {
                 RuntimeAction::Stop
             }
             _ => RuntimeAction::Continue,
+        }
+    }
+
+    fn init_plugins(&mut self) {
+        let context = self.context();
+        for plugin in self.plugins.iter_mut() {
+            plugin.init(&context);
         }
     }
 
