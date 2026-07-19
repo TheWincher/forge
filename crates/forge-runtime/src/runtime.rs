@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{future::Future, time::Duration};
 
 use tokio::{
     sync::mpsc::{self, Receiver, Sender},
@@ -7,16 +7,23 @@ use tokio::{
 
 use crate::{
     application::Application, error::RuntimeError, event::AppEvent, handle::RuntimeHandle,
-    signal::wait_for_shutdown, task_manager::TaskManager,
+    lifecycle::RuntimeState, signal::wait_for_shutdown, task_manager::TaskManager,
 };
 
 pub struct Runtime {
+    state: RuntimeState,
     app: Application,
     task_manager: TaskManager,
     tokio_runtime: tokio::runtime::Runtime,
     event_sender: Sender<AppEvent>,
     event_receiver: Receiver<AppEvent>,
     tasks: Vec<JoinHandle<()>>,
+}
+
+struct RuntimeContext<'a> {
+    state: &'a mut RuntimeState,
+    app: &'a mut Application,
+    task_manager: &'a mut TaskManager,
 }
 
 impl Runtime {
@@ -27,6 +34,7 @@ impl Runtime {
         let (sender, receiver) = mpsc::channel::<AppEvent>(100);
 
         let mut runtime = Self {
+            state: RuntimeState::Created,
             app: Application::new(),
             task_manager: TaskManager::new(),
             tokio_runtime,
@@ -41,8 +49,18 @@ impl Runtime {
     }
 
     pub fn run(&mut self) -> Result<(), RuntimeError> {
+        self.state = RuntimeState::Running;
+
+        let context = RuntimeContext {
+            state: &mut self.state,
+            app: &mut self.app,
+            task_manager: &mut self.task_manager,
+        };
+
+        let receiver = &mut self.event_receiver;
+
         self.tokio_runtime
-            .block_on(Self::event_loop(&mut self.event_receiver))
+            .block_on(Self::event_loop(receiver, context))
     }
 
     pub fn shutdown(&mut self) {
@@ -61,15 +79,21 @@ impl Runtime {
         RuntimeHandle::new(&self.event_sender)
     }
 
-    async fn event_loop(receiver: &mut Receiver<AppEvent>) -> Result<(), RuntimeError> {
+    async fn event_loop(
+        receiver: &mut Receiver<AppEvent>,
+        mut context: RuntimeContext<'_>,
+    ) -> Result<(), RuntimeError> {
         loop {
             let event_opt = receiver.recv().await;
             if let Some(event) = event_opt {
                 match event {
+                    AppEvent::Started => {}
                     AppEvent::ShutdownRequested => {
                         tracing::info!("Shutdown requested");
+                        *context.state = RuntimeState::Stopping;
                         break;
                     }
+                    AppEvent::ShutdownCompleted => {}
                 }
             } else {
                 tracing::warn!("Event channel closed");
