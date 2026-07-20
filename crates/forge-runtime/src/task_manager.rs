@@ -128,12 +128,6 @@ impl TaskManager {
     }
 }
 
-impl Default for TaskManager {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[derive(Clone)]
 pub struct TaskHandle {
     command_sender: mpsc::Sender<TaskCommand>,

@@ -76,11 +76,14 @@ impl Runtime {
     }
 
     fn start_runtime(&mut self) -> Result<(), RuntimeError> {
-        let _guard = self.tokio_runtime.enter();
         let context = self.context();
         self.app.start(&context)?;
 
-        self.tokio_runtime.block_on(self.enable_signal_handler())?;
+        let runtime_handle = self.handle();
+        let task_handle = self.task_handle.clone();
+
+        self.tokio_runtime
+            .block_on(Self::enable_signal_handler(task_handle, runtime_handle))?;
 
         Ok(())
     }
@@ -121,10 +124,11 @@ impl Runtime {
         }
     }
 
-    async fn enable_signal_handler(&self) -> Result<(), RuntimeError> {
-        let runtime_handle = self.handle();
-
-        self.task_handle
+    async fn enable_signal_handler(
+        task_handle: TaskHandle,
+        runtime_handle: RuntimeHandle,
+    ) -> Result<(), RuntimeError> {
+        task_handle
             .spawn(async move {
                 if let Err(error) = wait_for_shutdown(runtime_handle).await {
                     tracing::error!(?error, "Signal handler failed");
