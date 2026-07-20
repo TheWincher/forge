@@ -27,6 +27,9 @@ pub enum PluginServiceError {
         dependency: &'static str,
     },
 
+    #[error("plugin dependency graph contains a cycle")]
+    DependencyCycle,
+
     #[error("failed to shut down plugin `{plugin_id}`")]
     ShutdownFailed {
         plugin_id: &'static str,
@@ -39,7 +42,7 @@ pub enum PluginServiceError {
 pub struct PluginService {
     plugins: Vec<Box<dyn Plugin>>,
     plugin_indices: HashMap<&'static str, usize>,
-    initialized_count: usize,
+    initialized_plugins: Vec<usize>,
 }
 
 impl PluginService {
@@ -47,7 +50,7 @@ impl PluginService {
         Self {
             plugins: Vec::new(),
             plugin_indices: HashMap::new(),
-            initialized_count: 0,
+            initialized_plugins: Vec::new(),
         }
     }
 
@@ -82,9 +85,10 @@ impl PluginService {
     }
 
     pub fn init_all(&mut self, context: &RuntimeContext) -> Result<(), PluginServiceError> {
-        self.initialized_count = 0;
+        self.initialized_plugins.clear();
+        let initialization_order = self.initialization_order()?;
 
-        for index in 0..self.plugins.len() {
+        for index in initialization_order {
             let descriptor = *self.plugins[index].descriptor();
 
             tracing::info!(
@@ -103,10 +107,59 @@ impl PluginService {
                 });
             }
 
-            self.initialized_count += 1;
+            self.initialized_plugins.push(index);
         }
 
         Ok(())
+    }
+
+    fn initialization_order(&self) -> Result<Vec<usize>, PluginServiceError> {
+        let mut dependency_counts = vec![0usize; self.plugins.len()];
+        let mut dependents = vec![Vec::<usize>::new(); self.plugins.len()];
+
+        for (plugin_index, plugin) in self.plugins.iter().enumerate() {
+            let descriptor = plugin.descriptor();
+
+            for dependency_id in descriptor.dependencies() {
+                let dependency_index = *self.plugin_indices.get(dependency_id).ok_or(
+                    PluginServiceError::MissingDependency {
+                        plugin_id: descriptor.id(),
+                        dependency: dependency_id,
+                    },
+                )?;
+
+                dependency_counts[plugin_index] += 1;
+                dependents[dependency_index].push(plugin_index);
+            }
+        }
+
+        let mut ready = std::collections::VecDeque::new();
+
+        for (index, dependency_count) in dependency_counts.iter().enumerate() {
+            if *dependency_count == 0 {
+                ready.push_back(index);
+            }
+        }
+
+        let mut order = Vec::with_capacity(self.plugins.len());
+
+        while let Some(plugin_index) = ready.pop_front() {
+            order.push(plugin_index);
+
+            for dependent_index in &dependents[plugin_index] {
+                dependency_counts[*dependent_index] -= 1;
+
+                if dependency_counts[*dependent_index] == 0 {
+                    ready.push_back(*dependent_index);
+                }
+            }
+        }
+
+        if order.len() != self.plugins.len() {
+            return Err(PluginServiceError::DependencyCycle);
+        }
+
+        Ok(order)
     }
 
     pub fn validate_dependencies(&self) -> Result<(), PluginServiceError> {
@@ -129,8 +182,7 @@ impl PluginService {
     pub fn shutdown_all(&mut self, context: &RuntimeContext) -> Result<(), PluginServiceError> {
         let mut first_error = None;
 
-        while self.initialized_count > 0 {
-            let index = self.initialized_count - 1;
+        while let Some(index) = self.initialized_plugins.pop() {
             let descriptor = *self.plugins[index].descriptor();
 
             tracing::info!(
@@ -153,8 +205,6 @@ impl PluginService {
                     });
                 }
             }
-
-            self.initialized_count -= 1;
         }
 
         match first_error {
@@ -164,8 +214,7 @@ impl PluginService {
     }
 
     fn rollback_initialized(&mut self, context: &RuntimeContext) {
-        while self.initialized_count > 0 {
-            let index = self.initialized_count - 1;
+        while let Some(index) = self.initialized_plugins.pop() {
             let descriptor = *self.plugins[index].descriptor();
 
             if let Err(error) = self.plugins[index].shutdown(context) {
@@ -175,8 +224,6 @@ impl PluginService {
                     "Plugin rollback failed"
                 );
             }
-
-            self.initialized_count -= 1;
         }
     }
 
@@ -199,18 +246,64 @@ impl PluginService {
 
 #[cfg(test)]
 mod tests {
-    use crate::plugin::descriptor::PluginDescriptor;
-
     use super::*;
 
-    const TEST_DESCRIPTOR: PluginDescriptor =
-        PluginDescriptor::new("forge.test", "Test plugin", "0.1.0", &[]);
+    use crate::{
+        context::RuntimeContext,
+        plugin::{
+            descriptor::PluginDescriptor,
+            plugin::{Plugin, PluginError},
+        },
+    };
 
-    struct TestPlugin;
+    const INDEPENDENT_DESCRIPTOR: PluginDescriptor =
+        PluginDescriptor::new("forge.independent", "Independent plugin", "0.1.0", &[]);
+
+    const WORKSPACE_DESCRIPTOR: PluginDescriptor =
+        PluginDescriptor::new("forge.workspace", "Workspace", "0.1.0", &[]);
+
+    const FILESYSTEM_DESCRIPTOR: PluginDescriptor =
+        PluginDescriptor::new("forge.fs", "File system", "0.1.0", &[]);
+
+    const GIT_DESCRIPTOR: PluginDescriptor = PluginDescriptor::new(
+        "forge.git",
+        "Git",
+        "0.1.0",
+        &["forge.workspace", "forge.fs"],
+    );
+
+    const EDITOR_DESCRIPTOR: PluginDescriptor =
+        PluginDescriptor::new("forge.editor", "Editor", "0.1.0", &["forge.workspace"]);
+
+    const MISSING_DEPENDENCY_DESCRIPTOR: PluginDescriptor = PluginDescriptor::new(
+        "forge.missing-dependency",
+        "Missing dependency plugin",
+        "0.1.0",
+        &["forge.unknown"],
+    );
+
+    const CYCLE_A_DESCRIPTOR: PluginDescriptor =
+        PluginDescriptor::new("forge.cycle-a", "Cycle A", "0.1.0", &["forge.cycle-b"]);
+
+    const CYCLE_B_DESCRIPTOR: PluginDescriptor =
+        PluginDescriptor::new("forge.cycle-b", "Cycle B", "0.1.0", &["forge.cycle-c"]);
+
+    const CYCLE_C_DESCRIPTOR: PluginDescriptor =
+        PluginDescriptor::new("forge.cycle-c", "Cycle C", "0.1.0", &["forge.cycle-a"]);
+
+    struct TestPlugin {
+        descriptor: &'static PluginDescriptor,
+    }
+
+    impl TestPlugin {
+        const fn new(descriptor: &'static PluginDescriptor) -> Self {
+            Self { descriptor }
+        }
+    }
 
     impl Plugin for TestPlugin {
         fn descriptor(&self) -> &'static PluginDescriptor {
-            &TEST_DESCRIPTOR
+            self.descriptor
         }
 
         fn init(&mut self, _context: &RuntimeContext) -> Result<(), PluginError> {
@@ -222,21 +315,269 @@ mod tests {
         }
     }
 
+    fn plugin_ids_from_order(service: &PluginService, order: &[usize]) -> Vec<&'static str> {
+        order
+            .iter()
+            .map(|index| service.plugins[*index].descriptor().id())
+            .collect()
+    }
+
+    #[test]
+    fn registers_plugin() {
+        let mut service = PluginService::new();
+
+        service
+            .register(TestPlugin::new(&WORKSPACE_DESCRIPTOR))
+            .unwrap();
+
+        assert_eq!(service.len(), 1);
+        assert!(!service.is_empty());
+        assert!(service.contains("forge.workspace"));
+    }
+
     #[test]
     fn rejects_duplicate_plugin_ids() {
         let mut service = PluginService::new();
 
-        service.register(TestPlugin).unwrap();
+        service
+            .register(TestPlugin::new(&WORKSPACE_DESCRIPTOR))
+            .unwrap();
 
-        let error = service.register(TestPlugin).unwrap_err();
+        let error = service
+            .register(TestPlugin::new(&WORKSPACE_DESCRIPTOR))
+            .unwrap_err();
 
         assert!(matches!(
             error,
             PluginServiceError::DuplicatePluginId {
-                plugin_id: "forge.test"
+                plugin_id: "forge.workspace",
             }
         ));
 
         assert_eq!(service.len(), 1);
+    }
+
+    #[test]
+    fn exposes_registered_plugin_descriptors() {
+        let mut service = PluginService::new();
+
+        service
+            .register(TestPlugin::new(&WORKSPACE_DESCRIPTOR))
+            .unwrap();
+
+        service.register(TestPlugin::new(&GIT_DESCRIPTOR)).unwrap();
+
+        let descriptor_ids = service
+            .descriptors()
+            .map(PluginDescriptor::id)
+            .collect::<Vec<_>>();
+
+        assert_eq!(descriptor_ids, vec!["forge.workspace", "forge.git",]);
+    }
+
+    #[test]
+    fn accepts_existing_dependencies() {
+        let mut service = PluginService::new();
+
+        // Le plugin dépendant est volontairement enregistré en premier.
+        service.register(TestPlugin::new(&GIT_DESCRIPTOR)).unwrap();
+
+        service
+            .register(TestPlugin::new(&FILESYSTEM_DESCRIPTOR))
+            .unwrap();
+
+        service
+            .register(TestPlugin::new(&WORKSPACE_DESCRIPTOR))
+            .unwrap();
+
+        assert!(service.validate_dependencies().is_ok());
+    }
+
+    #[test]
+    fn rejects_missing_dependency() {
+        let mut service = PluginService::new();
+
+        service
+            .register(TestPlugin::new(&MISSING_DEPENDENCY_DESCRIPTOR))
+            .unwrap();
+
+        let error = service.validate_dependencies().unwrap_err();
+
+        assert!(matches!(
+            error,
+            PluginServiceError::MissingDependency {
+                plugin_id: "forge.missing-dependency",
+                dependency: "forge.unknown",
+            }
+        ));
+    }
+
+    #[test]
+    fn computes_dependency_initialization_order() {
+        let mut service = PluginService::new();
+
+        // Ordre d'enregistrement volontairement incorrect.
+        service.register(TestPlugin::new(&GIT_DESCRIPTOR)).unwrap();
+
+        service
+            .register(TestPlugin::new(&WORKSPACE_DESCRIPTOR))
+            .unwrap();
+
+        service
+            .register(TestPlugin::new(&FILESYSTEM_DESCRIPTOR))
+            .unwrap();
+
+        let order = service.initialization_order().unwrap();
+        let plugin_ids = plugin_ids_from_order(&service, &order);
+
+        let workspace_position = plugin_ids
+            .iter()
+            .position(|id| *id == "forge.workspace")
+            .unwrap();
+
+        let filesystem_position = plugin_ids.iter().position(|id| *id == "forge.fs").unwrap();
+
+        let git_position = plugin_ids.iter().position(|id| *id == "forge.git").unwrap();
+
+        assert!(workspace_position < git_position);
+        assert!(filesystem_position < git_position);
+    }
+
+    #[test]
+    fn computes_order_for_multiple_dependents() {
+        let mut service = PluginService::new();
+
+        service.register(TestPlugin::new(&GIT_DESCRIPTOR)).unwrap();
+
+        service
+            .register(TestPlugin::new(&EDITOR_DESCRIPTOR))
+            .unwrap();
+
+        service
+            .register(TestPlugin::new(&WORKSPACE_DESCRIPTOR))
+            .unwrap();
+
+        service
+            .register(TestPlugin::new(&FILESYSTEM_DESCRIPTOR))
+            .unwrap();
+
+        let order = service.initialization_order().unwrap();
+        let plugin_ids = plugin_ids_from_order(&service, &order);
+
+        let workspace_position = plugin_ids
+            .iter()
+            .position(|id| *id == "forge.workspace")
+            .unwrap();
+
+        let filesystem_position = plugin_ids.iter().position(|id| *id == "forge.fs").unwrap();
+
+        let git_position = plugin_ids.iter().position(|id| *id == "forge.git").unwrap();
+
+        let editor_position = plugin_ids
+            .iter()
+            .position(|id| *id == "forge.editor")
+            .unwrap();
+
+        assert!(workspace_position < git_position);
+        assert!(filesystem_position < git_position);
+        assert!(workspace_position < editor_position);
+    }
+
+    #[test]
+    fn preserves_registration_order_for_independent_plugins() {
+        let mut service = PluginService::new();
+
+        service
+            .register(TestPlugin::new(&INDEPENDENT_DESCRIPTOR))
+            .unwrap();
+
+        service
+            .register(TestPlugin::new(&WORKSPACE_DESCRIPTOR))
+            .unwrap();
+
+        service
+            .register(TestPlugin::new(&FILESYSTEM_DESCRIPTOR))
+            .unwrap();
+
+        let order = service.initialization_order().unwrap();
+        let plugin_ids = plugin_ids_from_order(&service, &order);
+
+        assert_eq!(
+            plugin_ids,
+            vec!["forge.independent", "forge.workspace", "forge.fs",]
+        );
+    }
+
+    #[test]
+    fn rejects_direct_dependency_cycle() {
+        const DIRECT_CYCLE_A: PluginDescriptor = PluginDescriptor::new(
+            "forge.direct-cycle-a",
+            "Direct cycle A",
+            "0.1.0",
+            &["forge.direct-cycle-b"],
+        );
+
+        const DIRECT_CYCLE_B: PluginDescriptor = PluginDescriptor::new(
+            "forge.direct-cycle-b",
+            "Direct cycle B",
+            "0.1.0",
+            &["forge.direct-cycle-a"],
+        );
+
+        let mut service = PluginService::new();
+
+        service.register(TestPlugin::new(&DIRECT_CYCLE_A)).unwrap();
+
+        service.register(TestPlugin::new(&DIRECT_CYCLE_B)).unwrap();
+
+        let error = service.initialization_order().unwrap_err();
+
+        assert!(matches!(error, PluginServiceError::DependencyCycle));
+    }
+
+    #[test]
+    fn rejects_transitive_dependency_cycle() {
+        let mut service = PluginService::new();
+
+        service
+            .register(TestPlugin::new(&CYCLE_A_DESCRIPTOR))
+            .unwrap();
+
+        service
+            .register(TestPlugin::new(&CYCLE_B_DESCRIPTOR))
+            .unwrap();
+
+        service
+            .register(TestPlugin::new(&CYCLE_C_DESCRIPTOR))
+            .unwrap();
+
+        let error = service.initialization_order().unwrap_err();
+
+        assert!(matches!(error, PluginServiceError::DependencyCycle));
+    }
+
+    #[test]
+    fn cycle_does_not_hide_independent_plugins() {
+        let mut service = PluginService::new();
+
+        service
+            .register(TestPlugin::new(&INDEPENDENT_DESCRIPTOR))
+            .unwrap();
+
+        service
+            .register(TestPlugin::new(&CYCLE_A_DESCRIPTOR))
+            .unwrap();
+
+        service
+            .register(TestPlugin::new(&CYCLE_B_DESCRIPTOR))
+            .unwrap();
+
+        service
+            .register(TestPlugin::new(&CYCLE_C_DESCRIPTOR))
+            .unwrap();
+
+        let error = service.initialization_order().unwrap_err();
+
+        assert!(matches!(error, PluginServiceError::DependencyCycle));
     }
 }
