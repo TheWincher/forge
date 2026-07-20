@@ -17,25 +17,20 @@ enum TaskCommand {
 
 pub struct TaskManager {
     tasks: JoinSet<()>,
-    command_sender: mpsc::Sender<TaskCommand>,
     command_receiver: mpsc::Receiver<TaskCommand>,
 }
 
 impl TaskManager {
-    pub fn new() -> Self {
+    pub fn new() -> (Self, TaskHandle) {
         let (command_sender, command_receiver) = mpsc::channel(100);
 
-        Self {
-            tasks: JoinSet::new(),
-            command_sender,
-            command_receiver,
-        }
-    }
-
-    pub fn handle(&self) -> TaskHandle {
-        TaskHandle {
-            command_sender: self.command_sender.clone(),
-        }
+        (
+            Self {
+                tasks: JoinSet::new(),
+                command_receiver,
+            },
+            TaskHandle { command_sender },
+        )
     }
 
     pub async fn run(mut self) {
@@ -168,7 +163,7 @@ impl TaskHandle {
 
         response_receiver
             .await
-            .map_err(|_| TaskError::ManagerStopped)
+            .map_err(|_| TaskError::ShutdownResponseDropped)
     }
 }
 
@@ -176,4 +171,7 @@ impl TaskHandle {
 pub enum TaskError {
     #[error("task manager has stopped")]
     ManagerStopped,
+
+    #[error("task manager stopped before completing shutdown")]
+    ShutdownResponseDropped,
 }
