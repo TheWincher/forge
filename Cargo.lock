@@ -56,7 +56,6 @@ name = "forge"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "forge-editor",
  "forge-runtime",
  "tracing-subscriber",
 ]
@@ -89,6 +88,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-event"
+version = "0.1.0"
+
+[[package]]
+name = "forge-fs"
+version = "0.1.0"
+
+[[package]]
+name = "forge-git"
+version = "0.1.0"
+
+[[package]]
+name = "forge-lsp"
+version = "0.1.0"
+
+[[package]]
+name = "forge-plugin"
+version = "0.1.0"
+
+[[package]]
+name = "forge-plugin-host"
+version = "0.1.0"
+
+[[package]]
 name = "forge-runtime"
 version = "0.1.0"
 dependencies = [
@@ -101,7 +124,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "forge-tui"
+name = "forge-terminal"
 version = "0.1.0"
 
 [[package]]

@@ -30,13 +30,25 @@ forge/
     ├── forge-config/        # config de l'application (Config)
     ├── forge-core/
     ├── forge-editor/
+    ├── forge-event/         # bus d'événements (AppEvent)
+    ├── forge-fs/            # accès/observation du système de fichiers (vide)
+    ├── forge-git/           # intégration Git (vide)
+    ├── forge-lsp/           # intégration LSP (vide)
+    ├── forge-plugin/        # trait Plugin + contexte fourni aux plugins
+    ├── forge-plugin-host/   # chargement de plugins tiers (vide)
     ├── forge-runtime/       # coeur du runtime applicatif
-    ├── forge-tui/
+    ├── forge-terminal/      # terminal intégré (vide)
     ├── forge-ui/
     └── forge-workspace/
 ```
 
-`forge-runtime` est le crate le plus avancé actuellement. `forge-workspace` porte désormais `Workspace` (ADR-0008). `forge-editor` porte `Editor`, premier vrai `Plugin` enregistré par le binaire (ADR-0009). Les autres (`forge-ui`, `forge-tui`, `forge-command`, `forge-cli`) sont encore des squelettes vides.
+Topologie étendue (ADR-0011) : chaque responsabilité transverse (bus
+d'événements, système de plugin, accès fichiers, LSP, terminal, Git,
+hébergement de plugins tiers) a sa propre crate plutôt qu'un sous-module.
+Migration en cours par phases (voir `docs/ROADMAP.md`). `forge-tui` a été
+supprimé, son rôle est absorbé par `forge-ui`.
+
+`forge-runtime` est le crate le plus avancé actuellement. `forge-workspace` porte désormais `Workspace` (ADR-0008). `forge-editor` porte `Editor`, premier vrai `Plugin` enregistré par le binaire (ADR-0009). Les crates neuves de la topologie étendue (`forge-plugin-host`, `forge-fs`, `forge-lsp`, `forge-terminal`, `forge-git`) sont encore des squelettes vides, tout comme `forge-ui`, `forge-command`, `forge-cli`.
 
 ## Architecture du runtime
 
@@ -50,29 +62,48 @@ forge (binaire)
 forge-runtime
  ├── runtime.rs         → Runtime, orchestrateur central, lifecycle
  ├── state.rs           → RuntimeState (Created/Starting/Running/Stopping/Stopped)
- ├── event.rs           → AppEvent (bus d'événements interne)
  ├── handle.rs          → RuntimeHandle (API publique minimale pour notifier le runtime)
- ├── context.rs         → RuntimeContext (handle + config, à donner aux futurs modules/plugins)
  ├── task_manager.rs    → TaskManager (gestion centralisée des tâches tokio via JoinSet)
- ├── plugin.rs          → trait Plugin (init(&RuntimeContext)), enregistrement statique
  ├── error.rs           → RuntimeError (thiserror)
  ├── signal.rs           → écoute Ctrl+C / SIGTERM (privé au crate, pub(crate))
  ├── application.rs
  └── lib.rs
+
+forge-event
+ └── event.rs           → AppEvent (bus d'événements, ADR-0011)
+
+forge-plugin
+ ├── plugin.rs          → trait Plugin (init(&RuntimeContext)), enregistrement statique
+ └── context.rs         → RuntimeContext (handle + config + workspace, à donner aux plugins, ADR-0011)
 ```
+
+`AppEvent` et `Plugin`/`RuntimeContext` ont déménagé hors de `forge-runtime`
+vers `forge-event`/`forge-plugin` (ADR-0011) ; `forge-runtime` en dépend au
+lieu de les porter directement.
 
 ### Principes retenus (voir docs/adr/)
 
 - **Runtime propriétaire** (ADR-0001) : le binaire `forge` ne fait qu'instancier `Runtime` et appeler `run()`. Toute la logique de cycle de vie, tâches, événements vit dans `forge-runtime`.
-- **Bus d'événements** (ADR-0002) : communication via un `mpsc::channel<AppEvent>`. Le `Runtime` est le seul consommateur (`event_receiver`). Les producteurs externes utilisent `RuntimeHandle`.
+- **Bus d'événements** (ADR-0002) : communication via un `mpsc::channel<AppEvent>`. Le `Runtime` est le seul consommateur (`event_receiver`). Les producteurs externes utilisent `RuntimeHandle`. `AppEvent` vit dans `forge-event` (ADR-0011).
 - **RuntimeHandle** (ADR-0003) : API minimale et `Clone`, donnée aux tâches internes (ex: signal handler) pour qu'elles puissent émettre des événements (ex: `shutdown()`) sans connaître l'état interne du runtime.
 - **TaskManager centralisé** (ADR-0004) : toutes les tâches tokio sont enregistrées via `TaskManager::spawn` (méthode `pub(crate)`, pas exposée en dehors du crate). Permet un `shutdown()` groupé avec timeout (5s par défaut), au-delà duquel les tâches restantes sont `abort_all()`.
 - **Lifecycle interne au Runtime** (ADR-0005) : les transitions d'état (`RuntimeState`) sont pilotées uniquement par `Runtime::transition_to()`, jamais par le bus d'événements. `AppEvent` ne sert qu'à transporter des intentions externes (ex: `ShutdownRequested`), pas l'état interne.
 - **Signal handling dans le runtime** (ADR-0006) : l'écoute de Ctrl+C / SIGTERM est démarrée automatiquement par le `Runtime` lui-même (pas par le binaire). `signal.rs` est dans `forge-runtime`, module privé (`mod signal;`, pas `pub mod`).
 - **Chargement de configuration** (ADR-0007) : `Config::load()` fusionne le fichier XDG utilisateur (`dirs::config_dir()/forge/config.toml`) et `./forge.toml` (projet, cwd) — le projet écrase l'utilisateur champ par champ. Fichier absent ou invalide → repli silencieux sur `Config::default()` (un `tracing::warn!` est émis en cas d'erreur de parsing). Jamais d'échec bloquant.
 - **Workspace optionnel** (ADR-0008) : `Workspace::open(root)` valide que la racine existe et est un dossier. `Config.workspace_root` absent ou invalide → le runtime démarre avec `workspace: None` (`tracing::warn!` sur erreur), jamais bloquant — même principe que ADR-0007. v1 minimal : `Workspace` ne porte que sa racine, pas de listing de fichiers.
-- **Plugins statiques** (ADR-0009) : trait `Plugin` avec un seul hook `init(&mut self, context: &RuntimeContext)`, enregistré via `Runtime::register_plugin(Box<dyn Plugin>)` avant `run()`. Compilés dans le binaire, pas de chargement dynamique. `forge-editor::Editor` est le premier consommateur, enregistré dans `main.rs`.
+- **Plugins statiques** (ADR-0009) : trait `Plugin` avec un seul hook `init(&mut self, context: &RuntimeContext)`, enregistré via `Runtime::register_plugin(Box<dyn Plugin>)` avant `run()`. Compilés dans le binaire, pas de chargement dynamique. `forge-editor::Editor` est le premier consommateur, enregistré dans `main.rs`. Le trait et le contexte vivent dans `forge-plugin` (ADR-0011).
+- **Topologie de crates étendue** (ADR-0011, supersède ADR-0010) : chaque responsabilité transverse (bus d'événements, système de plugin, accès fichiers, LSP, terminal, Git, hébergement de plugins tiers) a sa propre crate plutôt qu'un sous-module interne. Migration en phases — voir `docs/ROADMAP.md` pour l'état d'avancement. Pas de couches `domain/use_cases/infrastructure` imposées à l'intérieur des crates existantes (contrairement à ce que prévoyait ADR-0010, jamais implémenté).
 - **`spawn` interne, pas exposé** : `Runtime::spawn` / `TaskManager::spawn` sont `pub(crate)`. Les modules externes ne doivent jamais pouvoir lancer des tâches tokio arbitraires sur le runtime — ils passent par des méthodes dédiées (ex: `register_signal_handler`) ou par `RuntimeContext`.
+
+## Architecture de forge-editor
+
+`forge-editor` reste à plat pour l'instant (`lib.rs` : `Editor`, `Buffer`,
+`EditorError`), pas de sous-modules `domain/use_cases/infrastructure` — ADR-0010
+prévoyait cette structure mais a été supersédée par ADR-0011 avant d'être
+implémentée. `Editor` implémente toujours `Plugin` (import mis à jour vers
+`forge-plugin`, ADR-0011) et ne garde qu'un seul `Buffer` actif à la fois.
+Sa restructuration réelle (domaine riche, passage sous `forge-ui`) est une
+phase ultérieure de la migration ADR-0011, cf. `docs/ROADMAP.md`.
 
 ### Flux de shutdown
 
@@ -103,9 +134,10 @@ transition_to(Stopped)
 - `handle_event` est une fonction pure (`AppEvent → RuntimeAction`), testable sans tokio.
 - Dépendances tokio : `signal` doit être dans `forge-runtime/Cargo.toml` (pas dans `forge/Cargo.toml`), puisque c'est le runtime qui gère les signaux (voir ADR-0006).
 
-## Prochaines étapes envisagées (non commencées)
+## Prochaines étapes envisagées
 
-- Aucune pour l'instant : `forge-editor::Editor` ne fait encore que logger l'état du workspace à l'init — reste à définir sa vraie logique (buffers, fichiers ouverts, etc.).
+Voir `docs/ROADMAP.md` pour les jalons à venir (premier affichage TUI, listing
+de fichiers, buffers multiples, etc.).
 
 ## Conventions de travail
 

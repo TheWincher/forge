@@ -1,16 +1,22 @@
 use std::time::Duration;
 
 use forge_config::Config;
-use forge_workspace::Workspace;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 
 use crate::{
-    application::Application, context::RuntimeContext, error::RuntimeError, event::AppEvent,
-    handle::RuntimeHandle, lifecycle::RuntimeState, plugin::Plugin, signal::wait_for_shutdown,
-    task_manager::TaskManager,
+    application::Application,
+    context::RuntimeContext,
+    dispatcher::EventDispatcher,
+    error::RuntimeError,
+    event::AppEvent,
+    handle::RuntimeHandle,
+    lifecycle::RuntimeState,
+    plugin::registrar::{DefaultPluginRegistrar, PluginRegistrar},
+    signal::wait_for_shutdown,
+    task_manager::{TaskHandle, TaskManager},
 };
 
-enum RuntimeAction {
+pub enum RuntimeAction {
     Continue,
     Stop,
 }
@@ -18,80 +24,131 @@ enum RuntimeAction {
 pub struct Runtime {
     state: RuntimeState,
     app: Application,
-    task_manager: TaskManager,
+    task_handle: TaskHandle,
     tokio_runtime: tokio::runtime::Runtime,
     event_sender: Sender<AppEvent>,
     event_receiver: Receiver<AppEvent>,
-    config: Config,
-    workspace: Option<Workspace>,
-    plugins: Vec<Box<dyn Plugin>>,
 }
 
 impl Runtime {
     pub fn new() -> Result<Self, RuntimeError> {
+        Self::with_registrar(&DefaultPluginRegistrar)
+    }
+
+    pub fn with_registrar<R>(registrar: &R) -> Result<Self, RuntimeError>
+    where
+        R: PluginRegistrar + ?Sized,
+    {
+        let config = Config::load();
+        let app = Application::new(config, registrar)?;
+
         let tokio_runtime =
             tokio::runtime::Runtime::new().map_err(RuntimeError::TokioInitializationFailed)?;
 
-        let (sender, receiver) = mpsc::channel::<AppEvent>(100);
+        let (task_manager, task_handle) = TaskManager::new();
+        tokio_runtime.spawn(task_manager.run());
 
-        let config = Config::load();
-        let workspace =
-            config
-                .workspace_root
-                .clone()
-                .and_then(|root| match Workspace::open(root) {
-                    Ok(workspace) => Some(workspace),
-                    Err(error) => {
-                        tracing::warn!(%error, "Failed to open workspace");
-                        None
-                    }
-                });
+        let (sender, receiver) = mpsc::channel::<AppEvent>(100);
 
         Ok(Self {
             state: RuntimeState::Created,
-            app: Application::new(),
-            task_manager: TaskManager::new(),
+            app,
+            task_handle,
             tokio_runtime,
             event_sender: sender,
             event_receiver: receiver,
-            config,
-            workspace,
-            plugins: vec![],
         })
     }
 
     pub fn context(&self) -> RuntimeContext {
-        RuntimeContext::new(self.handle(), self.config.clone(), self.workspace.clone())
+        RuntimeContext::new(
+            self.handle(),
+            self.app.services().handle(),
+            self.task_handle.clone(),
+        )
     }
 
     pub fn run(&mut self) -> Result<(), RuntimeError> {
         self.transition_to(RuntimeState::Starting);
-        let _guard = self.tokio_runtime.enter();
-        self.init_plugins();
-        self.enable_signal_handler();
+
+        if let Err(error) = self.start_runtime() {
+            self.transition_to(RuntimeState::Failed);
+            return Err(error);
+        }
 
         self.transition_to(RuntimeState::Running);
-        let event_loop = Self::event_loop(&mut self.event_receiver);
-        self.tokio_runtime.block_on(event_loop)?;
+
+        let runtime_result = self.run_event_loop();
 
         self.transition_to(RuntimeState::Stopping);
-        let shutdown = self.task_manager.shutdown(Duration::from_secs(5));
-        self.tokio_runtime.block_on(shutdown);
 
-        self.transition_to(RuntimeState::Stopped);
+        let shutdown_result = self.stop_runtime();
 
-        Ok(())
+        match (runtime_result, shutdown_result) {
+            (Ok(()), Ok(())) => {
+                self.transition_to(RuntimeState::Stopped);
+                Ok(())
+            }
+
+            (Err(runtime_error), Ok(())) => {
+                self.transition_to(RuntimeState::Failed);
+                Err(runtime_error)
+            }
+
+            (Ok(()), Err(shutdown_error)) => {
+                self.transition_to(RuntimeState::Failed);
+                Err(shutdown_error)
+            }
+
+            (Err(runtime_error), Err(shutdown_error)) => {
+                tracing::error!(
+                    ?shutdown_error,
+                    "Runtime shutdown also failed after event loop failure"
+                );
+
+                self.transition_to(RuntimeState::Failed);
+                Err(runtime_error)
+            }
+        }
     }
 
     pub fn handle(&self) -> RuntimeHandle {
         RuntimeHandle::new(&self.event_sender)
     }
 
-    pub fn register_plugin(&mut self, plugin: Box<dyn Plugin>) {
-        self.plugins.push(plugin);
+    fn start_runtime(&mut self) -> Result<(), RuntimeError> {
+        let runtime_handle = self.handle();
+        let task_handle = self.task_handle.clone();
+
+        self.tokio_runtime
+            .block_on(Self::enable_signal_handler(task_handle, runtime_handle))?;
+
+        let context = self.context();
+        self.app.start(&context)?;
+
+        Ok(())
+    }
+
+    fn run_event_loop(&mut self) -> Result<(), RuntimeError> {
+        let event_loop = Self::event_loop(&mut self.event_receiver);
+        self.tokio_runtime.block_on(event_loop)?;
+
+        Ok(())
+    }
+
+    fn stop_runtime(&mut self) -> Result<(), RuntimeError> {
+        let context = self.context();
+        self.app.stop(&context)?;
+
+        let shutdown = self.task_handle.shutdown(Duration::from_secs(5));
+        self.tokio_runtime.block_on(shutdown)?;
+
+        Ok(())
     }
 
     async fn event_loop(receiver: &mut Receiver<AppEvent>) -> Result<(), RuntimeError> {
+        let dispatcher = EventDispatcher::new();
+
         loop {
             let event = receiver.recv().await;
 
@@ -100,38 +157,28 @@ impl Runtime {
                 return Ok(());
             };
 
-            match Self::handle_event(event) {
+            let action = dispatcher.dispatch(event).await?;
+
+            match action {
                 RuntimeAction::Continue => continue,
                 RuntimeAction::Stop => return Ok(()),
             }
         }
     }
 
-    fn handle_event(event: AppEvent) -> RuntimeAction {
-        match event {
-            AppEvent::ShutdownRequested => {
-                tracing::info!("Shutdown requested");
-                RuntimeAction::Stop
-            }
-            _ => RuntimeAction::Continue,
-        }
-    }
+    async fn enable_signal_handler(
+        task_handle: TaskHandle,
+        runtime_handle: RuntimeHandle,
+    ) -> Result<(), RuntimeError> {
+        task_handle
+            .spawn(async move {
+                if let Err(error) = wait_for_shutdown(runtime_handle).await {
+                    tracing::error!(?error, "Signal handler failed");
+                }
+            })
+            .await?;
 
-    fn init_plugins(&mut self) {
-        let context = self.context();
-        for plugin in self.plugins.iter_mut() {
-            plugin.init(&context);
-        }
-    }
-
-    fn enable_signal_handler(&mut self) {
-        let handle = self.handle();
-
-        self.task_manager.spawn(async move {
-            if let Err(error) = wait_for_shutdown(handle).await {
-                tracing::error!(?error, "Signal handler failed");
-            }
-        });
+        Ok(())
     }
 
     fn transition_to(&mut self, state: RuntimeState) {

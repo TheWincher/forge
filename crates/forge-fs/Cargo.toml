@@ -1,5 +1,5 @@
 [package]
-name = "forge-tui"
+name = "forge-fs"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

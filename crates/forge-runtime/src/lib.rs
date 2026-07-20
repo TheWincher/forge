@@ -1,10 +1,12 @@
 pub mod application;
 pub mod context;
+pub mod dispatcher;
 pub mod error;
 pub mod event;
 pub mod handle;
 pub mod lifecycle;
 pub mod plugin;
 pub mod runtime;
+pub mod services;
 mod signal;
 pub mod task_manager;

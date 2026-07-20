@@ -1,20 +1,24 @@
-use crate::handle::RuntimeHandle;
-use forge_config::Config;
-use forge_workspace::Workspace;
+use crate::{
+    handle::RuntimeHandle, services::registry::ServiceRegistryHandle, task_manager::TaskHandle,
+};
 
 #[derive(Clone)]
 pub struct RuntimeContext {
     handle: RuntimeHandle,
-    config: Config,
-    workspace: Option<Workspace>,
+    services: ServiceRegistryHandle,
+    tasks: TaskHandle,
 }
 
 impl RuntimeContext {
-    pub(crate) fn new(handle: RuntimeHandle, config: Config, workspace: Option<Workspace>) -> Self {
+    pub(crate) fn new(
+        handle: RuntimeHandle,
+        services: ServiceRegistryHandle,
+        task_handle: TaskHandle,
+    ) -> Self {
         Self {
             handle,
-            config,
-            workspace,
+            services,
+            tasks: task_handle,
         }
     }
 
@@ -22,11 +26,11 @@ impl RuntimeContext {
         &self.handle
     }
 
-    pub fn config(&self) -> &Config {
-        &self.config
+    pub fn services(&self) -> &ServiceRegistryHandle {
+        &self.services
     }
 
-    pub fn workspace(&self) -> Option<&Workspace> {
-        self.workspace.as_ref()
+    pub fn tasks(&self) -> &TaskHandle {
+        &self.tasks
     }
 }
