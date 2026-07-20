@@ -7,5 +7,6 @@ pub mod handle;
 pub mod lifecycle;
 pub mod plugin;
 pub mod runtime;
+pub mod services;
 mod signal;
 pub mod task_manager;

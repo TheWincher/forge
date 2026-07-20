@@ -22,9 +22,6 @@ pub struct Runtime {
     tokio_runtime: tokio::runtime::Runtime,
     event_sender: Sender<AppEvent>,
     event_receiver: Receiver<AppEvent>,
-    config: Config,
-    workspace: Option<Workspace>,
-    plugins: Vec<Box<dyn Plugin>>,
 }
 
 impl Runtime {
@@ -34,19 +31,6 @@ impl Runtime {
 
         let (sender, receiver) = mpsc::channel::<AppEvent>(100);
 
-        let config = Config::load();
-        let workspace =
-            config
-                .workspace_root
-                .clone()
-                .and_then(|root| match Workspace::open(root) {
-                    Ok(workspace) => Some(workspace),
-                    Err(error) => {
-                        tracing::warn!(%error, "Failed to open workspace");
-                        None
-                    }
-                });
-
         Ok(Self {
             state: RuntimeState::Created,
             app: Application::new(),
@@ -54,20 +38,18 @@ impl Runtime {
             tokio_runtime,
             event_sender: sender,
             event_receiver: receiver,
-            config,
-            workspace,
-            plugins: vec![],
         })
     }
 
     pub fn context(&self) -> RuntimeContext {
-        RuntimeContext::new(self.handle(), self.config.clone(), self.workspace.clone())
+        RuntimeContext::new(self.handle(), self.app.services())
     }
 
     pub fn run(&mut self) -> Result<(), RuntimeError> {
         self.transition_to(RuntimeState::Starting);
         let _guard = self.tokio_runtime.enter();
-        self.init_plugins();
+        let context = self.context();
+        self.app.services_mut().plugin_mut().init_all(&context);
         self.enable_signal_handler();
 
         self.transition_to(RuntimeState::Running);
@@ -87,10 +69,6 @@ impl Runtime {
         RuntimeHandle::new(&self.event_sender)
     }
 
-    pub fn register_plugin(&mut self, plugin: Box<dyn Plugin>) {
-        self.plugins.push(plugin);
-    }
-
     async fn event_loop(receiver: &mut Receiver<AppEvent>) -> Result<(), RuntimeError> {
         loop {
             let event = receiver.recv().await;
@@ -100,29 +78,13 @@ impl Runtime {
                 return Ok(());
             };
 
-            let action = EventDispatcher::dispatch(event).await?;
+            let dispatcher = EventDispatcher::new();
+            let action = dispatcher.dispatch(event).await?;
 
             match action {
                 RuntimeAction::Continue => continue,
                 RuntimeAction::Stop => return Ok(()),
             }
-        }
-    }
-
-    fn handle_event(event: AppEvent) -> RuntimeAction {
-        match event {
-            AppEvent::ShutdownRequested => {
-                tracing::info!("Shutdown requested");
-                RuntimeAction::Stop
-            }
-            _ => RuntimeAction::Continue,
-        }
-    }
-
-    fn init_plugins(&mut self) {
-        let context = self.context();
-        for plugin in self.plugins.iter_mut() {
-            plugin.init(&context);
         }
     }
 
