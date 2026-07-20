@@ -1,11 +1,20 @@
 use forge_config::Config;
 
-use crate::services::{
-    command::{CommandHandle, CommandService},
-    config::{ConfigHandle, ConfigService},
-    plugin::PluginService,
-    workspace::{WorkspaceHandle, WorkspaceService},
+use crate::{
+    plugin::registrar::PluginRegistrar,
+    services::{
+        command::{CommandHandle, CommandService},
+        config::{ConfigHandle, ConfigService},
+        plugin::{PluginService, PluginServiceError},
+        workspace::{WorkspaceHandle, WorkspaceService},
+    },
 };
+
+#[derive(Debug, thiserror::Error)]
+pub enum ServiceRegistryError {
+    #[error("plugin service error")]
+    Plugin(#[from] PluginServiceError),
+}
 
 pub struct ServiceRegistry {
     workspace: WorkspaceService,
@@ -15,15 +24,19 @@ pub struct ServiceRegistry {
 }
 
 impl ServiceRegistry {
-    pub fn new() -> Self {
-        let config = Config::load();
+    pub fn new<R>(config: Config, registrar: &R) -> Result<Self, ServiceRegistryError>
+    where
+        R: PluginRegistrar + ?Sized,
+    {
+        let mut plugin = PluginService::new();
+        registrar.register(&mut plugin)?;
 
-        Self {
+        Ok(Self {
             workspace: WorkspaceService::new(&config),
             command: CommandService::new(),
-            plugin: PluginService::new(),
             config: ConfigService::new(config),
-        }
+            plugin,
+        })
     }
 
     pub fn handle(&self) -> ServiceRegistryHandle {

@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use forge_config::Config;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 
 use crate::{
@@ -30,6 +31,10 @@ pub struct Runtime {
 
 impl Runtime {
     pub fn new() -> Result<Self, RuntimeError> {
+        let config = Config::load();
+
+        let app = Application::new(config)?;
+
         let tokio_runtime =
             tokio::runtime::Runtime::new().map_err(RuntimeError::TokioInitializationFailed)?;
 
@@ -40,7 +45,7 @@ impl Runtime {
 
         Ok(Self {
             state: RuntimeState::Created,
-            app: Application::new(),
+            app,
             task_handle,
             tokio_runtime,
             event_sender: sender,
@@ -58,17 +63,46 @@ impl Runtime {
 
     pub fn run(&mut self) -> Result<(), RuntimeError> {
         self.transition_to(RuntimeState::Starting);
-        self.start_runtime()?;
+
+        if let Err(error) = self.start_runtime() {
+            self.transition_to(RuntimeState::Failed);
+            return Err(error);
+        }
 
         self.transition_to(RuntimeState::Running);
-        self.run_event_loop()?;
+
+        let runtime_result = self.run_event_loop();
 
         self.transition_to(RuntimeState::Stopping);
-        self.stop_runtime()?;
 
-        self.transition_to(RuntimeState::Stopped);
+        let shutdown_result = self.stop_runtime();
 
-        Ok(())
+        match (runtime_result, shutdown_result) {
+            (Ok(()), Ok(())) => {
+                self.transition_to(RuntimeState::Stopped);
+                Ok(())
+            }
+
+            (Err(runtime_error), Ok(())) => {
+                self.transition_to(RuntimeState::Failed);
+                Err(runtime_error)
+            }
+
+            (Ok(()), Err(shutdown_error)) => {
+                self.transition_to(RuntimeState::Failed);
+                Err(shutdown_error)
+            }
+
+            (Err(runtime_error), Err(shutdown_error)) => {
+                tracing::error!(
+                    ?shutdown_error,
+                    "Runtime shutdown also failed after event loop failure"
+                );
+
+                self.transition_to(RuntimeState::Failed);
+                Err(runtime_error)
+            }
+        }
     }
 
     pub fn handle(&self) -> RuntimeHandle {

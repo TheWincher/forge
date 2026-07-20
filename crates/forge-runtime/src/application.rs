@@ -1,15 +1,22 @@
+use forge_config::Config;
 use thiserror::Error;
 
 use crate::{
     context::RuntimeContext,
-    error::RuntimeError,
-    services::{plugin::PluginServiceError, registry::ServiceRegistry},
+    plugin::registrar::{DefaultPluginRegistrar, PluginRegistrar},
+    services::{
+        plugin::PluginServiceError,
+        registry::{ServiceRegistry, ServiceRegistryError},
+    },
 };
 
 #[derive(Debug, Error)]
 pub enum ApplicationError {
     #[error("plugin service error")]
     PluginService(#[from] PluginServiceError),
+
+    #[error("service registry error")]
+    ServiceRegistry(#[from] ServiceRegistryError),
 }
 
 pub struct Application {
@@ -17,10 +24,10 @@ pub struct Application {
 }
 
 impl Application {
-    pub fn new() -> Self {
-        Self {
-            services: ServiceRegistry::new(),
-        }
+    pub fn new(config: Config) -> Result<Self, ApplicationError> {
+        let services = ServiceRegistry::new(config, &DefaultPluginRegistrar)?;
+
+        Ok(Self { services })
     }
 
     pub fn services(&self) -> &ServiceRegistry {

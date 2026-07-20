@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::context::RuntimeContext;
+use crate::{context::RuntimeContext, plugin::descriptor::PluginDescriptor};
 
 #[derive(Debug, Error)]
 pub enum PluginError {
@@ -15,7 +15,7 @@ pub enum PluginError {
 }
 
 pub trait Plugin: Send {
-    fn name(&self) -> &'static str;
+    fn descriptor(&self) -> &'static PluginDescriptor;
 
     fn init(&mut self, context: &RuntimeContext) -> Result<(), PluginError>;
 
