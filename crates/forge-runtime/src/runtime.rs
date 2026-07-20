@@ -96,7 +96,8 @@ impl Runtime {
     }
 
     fn stop_runtime(&mut self) -> Result<(), RuntimeError> {
-        self.app.stop()?;
+        let context = self.context();
+        self.app.stop(&context)?;
 
         let shutdown = self.task_handle.shutdown(Duration::from_secs(5));
         self.tokio_runtime.block_on(shutdown)?;

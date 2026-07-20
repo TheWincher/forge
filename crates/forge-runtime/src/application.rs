@@ -1,4 +1,16 @@
-use crate::{context::RuntimeContext, error::RuntimeError, services::registry::ServiceRegistry};
+use thiserror::Error;
+
+use crate::{
+    context::RuntimeContext,
+    error::RuntimeError,
+    services::{plugin::PluginServiceError, registry::ServiceRegistry},
+};
+
+#[derive(Debug, Error)]
+pub enum ApplicationError {
+    #[error("plugin service error")]
+    PluginService(#[from] PluginServiceError),
+}
 
 pub struct Application {
     services: ServiceRegistry,
@@ -19,13 +31,15 @@ impl Application {
         &mut self.services
     }
 
-    pub fn start(&mut self, context: &RuntimeContext) -> Result<(), RuntimeError> {
-        self.services.plugin_mut().init_all(context);
+    pub fn start(&mut self, context: &RuntimeContext) -> Result<(), ApplicationError> {
+        self.services.plugin_mut().init_all(context)?;
 
         Ok(())
     }
 
-    pub fn stop(&mut self) -> Result<(), RuntimeError> {
+    pub fn stop(&mut self, context: &RuntimeContext) -> Result<(), ApplicationError> {
+        self.services.plugin_mut().shutdown_all(context)?;
+
         Ok(())
     }
 }

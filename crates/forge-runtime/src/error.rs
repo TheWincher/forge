@@ -3,7 +3,7 @@ use std::io;
 use thiserror::Error;
 use tokio::sync::mpsc::error::TrySendError;
 
-use crate::{event::AppEvent, task_manager::TaskError};
+use crate::{application::ApplicationError, event::AppEvent, task_manager::TaskError};
 
 #[derive(Error, Debug)]
 pub enum RuntimeError {
@@ -18,9 +18,9 @@ pub enum RuntimeError {
 
     #[error("task manager error")]
     Task(#[from] TaskError),
-    // #[error("application error")]
-    // Application(#[from] ApplicationError),
 
+    #[error("application error")]
+    Application(#[from] ApplicationError),
     // #[error("dispatcher error")]
     // Dispatcher(#[from] DispatcherError),
 }
