@@ -1,7 +1,5 @@
 use std::collections::HashMap;
 
-use thiserror::Error;
-
 use crate::{
     context::RuntimeContext,
     plugin::{
@@ -106,6 +104,8 @@ impl PluginService {
     }
 
     pub fn shutdown_all(&mut self, context: &RuntimeContext) -> Result<(), PluginServiceError> {
+        let mut first_error = None;
+
         while self.initialized_count > 0 {
             let index = self.initialized_count - 1;
             let descriptor = *self.plugins[index].descriptor();
@@ -116,17 +116,28 @@ impl PluginService {
                 "Shutting down plugin"
             );
 
-            self.plugins[index].shutdown(context).map_err(|source| {
-                PluginServiceError::ShutdownFailed {
-                    plugin_id: descriptor.id(),
-                    source,
+            if let Err(source) = self.plugins[index].shutdown(context) {
+                tracing::error!(
+                    plugin_id = descriptor.id(),
+                    ?source,
+                    "Plugin shutdown failed"
+                );
+
+                if first_error.is_none() {
+                    first_error = Some(PluginServiceError::ShutdownFailed {
+                        plugin_id: descriptor.id(),
+                        source,
+                    });
                 }
-            })?;
+            }
 
             self.initialized_count -= 1;
         }
 
-        Ok(())
+        match first_error {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
     }
 
     fn rollback_initialized(&mut self, context: &RuntimeContext) {

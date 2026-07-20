@@ -11,6 +11,7 @@ use crate::{
     event::AppEvent,
     handle::RuntimeHandle,
     lifecycle::RuntimeState,
+    plugin::registrar::{DefaultPluginRegistrar, PluginRegistrar},
     signal::wait_for_shutdown,
     task_manager::{TaskHandle, TaskManager},
 };
@@ -31,9 +32,15 @@ pub struct Runtime {
 
 impl Runtime {
     pub fn new() -> Result<Self, RuntimeError> {
-        let config = Config::load();
+        Self::with_registrar(&DefaultPluginRegistrar)
+    }
 
-        let app = Application::new(config)?;
+    pub fn with_registrar<R>(registrar: &R) -> Result<Self, RuntimeError>
+    where
+        R: PluginRegistrar + ?Sized,
+    {
+        let config = Config::load();
+        let app = Application::new(config, registrar)?;
 
         let tokio_runtime =
             tokio::runtime::Runtime::new().map_err(RuntimeError::TokioInitializationFailed)?;
@@ -110,14 +117,14 @@ impl Runtime {
     }
 
     fn start_runtime(&mut self) -> Result<(), RuntimeError> {
-        let context = self.context();
-        self.app.start(&context)?;
-
         let runtime_handle = self.handle();
         let task_handle = self.task_handle.clone();
 
         self.tokio_runtime
             .block_on(Self::enable_signal_handler(task_handle, runtime_handle))?;
+
+        let context = self.context();
+        self.app.start(&context)?;
 
         Ok(())
     }

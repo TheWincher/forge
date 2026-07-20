@@ -3,7 +3,7 @@ use thiserror::Error;
 
 use crate::{
     context::RuntimeContext,
-    plugin::registrar::{DefaultPluginRegistrar, PluginRegistrar},
+    plugin::registrar::PluginRegistrar,
     services::{
         plugin::PluginServiceError,
         registry::{ServiceRegistry, ServiceRegistryError},
@@ -24,8 +24,11 @@ pub struct Application {
 }
 
 impl Application {
-    pub fn new(config: Config) -> Result<Self, ApplicationError> {
-        let services = ServiceRegistry::new(config, &DefaultPluginRegistrar)?;
+    pub fn new<R>(config: Config, registrar: &R) -> Result<Self, ApplicationError>
+    where
+        R: PluginRegistrar + ?Sized,
+    {
+        let services = ServiceRegistry::new(config, registrar)?;
 
         Ok(Self { services })
     }
