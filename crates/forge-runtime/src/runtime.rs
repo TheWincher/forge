@@ -79,6 +79,7 @@ impl Runtime {
     }
 
     fn stop_runtime(&mut self) -> Result<(), RuntimeError> {
+        self.app.stop()?;
         let shutdown = self.task_manager.shutdown(Duration::from_secs(5));
         self.tokio_runtime.block_on(shutdown);
 
@@ -86,6 +87,8 @@ impl Runtime {
     }
 
     async fn event_loop(receiver: &mut Receiver<AppEvent>) -> Result<(), RuntimeError> {
+        let dispatcher = EventDispatcher::new();
+
         loop {
             let event = receiver.recv().await;
 
@@ -94,7 +97,6 @@ impl Runtime {
                 return Ok(());
             };
 
-            let dispatcher = EventDispatcher::new();
             let action = dispatcher.dispatch(event).await?;
 
             match action {

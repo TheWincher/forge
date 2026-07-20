@@ -10,8 +10,6 @@ impl EventDispatcher {
     pub async fn dispatch(&self, event: AppEvent) -> Result<RuntimeAction, RuntimeError> {
         match event {
             AppEvent::ShutdownRequested => Ok(RuntimeAction::Stop),
-            AppEvent::Started => Ok(RuntimeAction::Continue),
-            AppEvent::ShutdownCompleted => Ok(RuntimeAction::Continue),
         }
     }
 }

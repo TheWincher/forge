@@ -1,3 +1,5 @@
+use forge_config::Config;
+
 use crate::services::{
     command::{CommandHandle, CommandService},
     config::{ConfigHandle, ConfigService},
@@ -14,13 +16,13 @@ pub struct ServiceRegistry {
 
 impl ServiceRegistry {
     pub fn new() -> Self {
-        let config = ConfigService::new();
+        let config = Config::load();
 
         Self {
-            workspace: WorkspaceService::new(config.config()),
+            workspace: WorkspaceService::new(&config),
             command: CommandService::new(),
             plugin: PluginService::new(),
-            config,
+            config: ConfigService::new(config),
         }
     }
 

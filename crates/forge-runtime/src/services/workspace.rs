@@ -5,7 +5,7 @@ use forge_workspace::Workspace;
 use tokio::sync::RwLock;
 
 pub struct WorkspaceService {
-    workspace: Option<Workspace>,
+    workspace: Arc<RwLock<Option<Workspace>>>,
 }
 
 impl WorkspaceService {
@@ -22,7 +22,9 @@ impl WorkspaceService {
                     }
                 });
 
-        Self { workspace }
+        Self {
+            workspace: Arc::new(RwLock::new(workspace)),
+        }
     }
 }
 
@@ -34,7 +36,7 @@ pub struct WorkspaceHandle {
 impl WorkspaceService {
     pub fn handle(&self) -> WorkspaceHandle {
         WorkspaceHandle {
-            workspace: Arc::new(RwLock::new(self.workspace.clone())),
+            workspace: Arc::clone(&self.workspace),
         }
     }
 }

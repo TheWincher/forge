@@ -1,5 +1,3 @@
-use std::sync::{Arc, RwLock};
-
 use crate::{context::RuntimeContext, plugin::Plugin};
 
 pub struct PluginService {

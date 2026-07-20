@@ -4,28 +4,33 @@ use forge_config::Config;
 use tokio::sync::RwLock;
 
 pub struct ConfigService {
-    config: Config,
+    config: Arc<RwLock<Config>>,
 }
 
 impl ConfigService {
-    pub fn new() -> Self {
+    pub fn new(config: Config) -> Self {
         Self {
-            config: Config::load(),
+            config: Arc::new(RwLock::new(config)),
         }
     }
 
-    pub fn config(&self) -> &Config {
-        &self.config
+    pub async fn config(&self) -> Config {
+        self.config.read().await.clone()
     }
-
     pub fn handle(&self) -> ConfigHandle {
         ConfigHandle {
-            workspace: Arc::new(RwLock::new(self.config.clone())),
+            config: Arc::clone(&self.config),
         }
     }
 }
 
 #[derive(Clone)]
 pub struct ConfigHandle {
-    workspace: Arc<RwLock<Config>>,
+    config: Arc<RwLock<Config>>,
+}
+
+impl ConfigHandle {
+    pub async fn current(&self) -> Config {
+        self.config.read().await.clone()
+    }
 }
