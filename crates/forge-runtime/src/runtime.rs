@@ -5,12 +5,12 @@ use forge_workspace::Workspace;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 
 use crate::{
-    application::Application, context::RuntimeContext, error::RuntimeError, event::AppEvent,
-    handle::RuntimeHandle, lifecycle::RuntimeState, plugin::Plugin, signal::wait_for_shutdown,
-    task_manager::TaskManager,
+    application::Application, context::RuntimeContext, dispatcher::EventDispatcher,
+    error::RuntimeError, event::AppEvent, handle::RuntimeHandle, lifecycle::RuntimeState,
+    plugin::Plugin, signal::wait_for_shutdown, task_manager::TaskManager,
 };
 
-enum RuntimeAction {
+pub enum RuntimeAction {
     Continue,
     Stop,
 }
@@ -100,7 +100,9 @@ impl Runtime {
                 return Ok(());
             };
 
-            match Self::handle_event(event) {
+            let action = EventDispatcher::dispatch(event).await?;
+
+            match action {
                 RuntimeAction::Continue => continue,
                 RuntimeAction::Stop => return Ok(()),
             }

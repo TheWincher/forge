@@ -1,5 +1,6 @@
 pub mod application;
 pub mod context;
+pub mod dispatcher;
 pub mod error;
 pub mod event;
 pub mod handle;
