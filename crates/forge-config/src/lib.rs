@@ -54,7 +54,8 @@ mod tests {
     use std::path::PathBuf;
 
     fn write_temp_file(name: &str, contents: &str) -> PathBuf {
-        let path = env::temp_dir().join(format!("forge-config-test-{}-{}", std::process::id(), name));
+        let path =
+            env::temp_dir().join(format!("forge-config-test-{}-{}", std::process::id(), name));
         fs::write(&path, contents).unwrap();
         path
     }

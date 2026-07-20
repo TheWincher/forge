@@ -52,7 +52,8 @@ mod tests {
 
     #[test]
     fn open_file_instead_of_directory_fails() {
-        let root = env::temp_dir().join(format!("forge-workspace-test-file-{}", std::process::id()));
+        let root =
+            env::temp_dir().join(format!("forge-workspace-test-file-{}", std::process::id()));
         fs::write(&root, "not a directory").unwrap();
 
         let error = Workspace::open(root.clone()).unwrap_err();
