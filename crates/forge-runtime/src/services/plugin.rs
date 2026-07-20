@@ -21,6 +21,12 @@ pub enum PluginServiceError {
         source: PluginError,
     },
 
+    #[error("plugin `{plugin_id}` depends on missing plugin `{dependency}`")]
+    MissingDependency {
+        plugin_id: &'static str,
+        dependency: &'static str,
+    },
+
     #[error("failed to shut down plugin `{plugin_id}`")]
     ShutdownFailed {
         plugin_id: &'static str,
@@ -98,6 +104,23 @@ impl PluginService {
             }
 
             self.initialized_count += 1;
+        }
+
+        Ok(())
+    }
+
+    pub fn validate_dependencies(&self) -> Result<(), PluginServiceError> {
+        for plugin in &self.plugins {
+            let descriptor = plugin.descriptor();
+
+            for dependency in descriptor.dependencies() {
+                if !self.plugin_indices.contains_key(dependency) {
+                    return Err(PluginServiceError::MissingDependency {
+                        plugin_id: descriptor.id(),
+                        dependency,
+                    });
+                }
+            }
         }
 
         Ok(())
@@ -181,7 +204,7 @@ mod tests {
     use super::*;
 
     const TEST_DESCRIPTOR: PluginDescriptor =
-        PluginDescriptor::new("forge.test", "Test plugin", "0.1.0");
+        PluginDescriptor::new("forge.test", "Test plugin", "0.1.0", &[]);
 
     struct TestPlugin;
 

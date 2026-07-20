@@ -30,6 +30,7 @@ impl ServiceRegistry {
     {
         let mut plugin = PluginService::new();
         registrar.register(&mut plugin)?;
+        plugin.validate_dependencies()?;
 
         Ok(Self {
             workspace: WorkspaceService::new(&config),
