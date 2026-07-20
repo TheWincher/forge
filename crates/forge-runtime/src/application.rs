@@ -1,35 +1,13 @@
-use forge_config::Config;
-use forge_workspace::Workspace;
-
-use crate::{plugin::Plugin, services::registry::ServiceRegistry};
+use crate::{context::RuntimeContext, error::RuntimeError, services::registry::ServiceRegistry};
 
 pub struct Application {
     services: ServiceRegistry,
-    config: Config,
-    workspace: Option<Workspace>,
-    plugins: Vec<Box<dyn Plugin>>,
 }
 
 impl Application {
     pub fn new() -> Self {
-        let config = Config::load();
-        let workspace =
-            config
-                .workspace_root
-                .clone()
-                .and_then(|root| match Workspace::open(root) {
-                    Ok(workspace) => Some(workspace),
-                    Err(error) => {
-                        tracing::warn!(%error, "Failed to open workspace");
-                        None
-                    }
-                });
-
         Self {
             services: ServiceRegistry::new(),
-            config,
-            workspace,
-            plugins: vec![],
         }
     }
 
@@ -39,5 +17,15 @@ impl Application {
 
     pub fn services_mut(&mut self) -> &mut ServiceRegistry {
         &mut self.services
+    }
+
+    pub fn start(&mut self, context: &RuntimeContext) -> Result<(), RuntimeError> {
+        self.services.plugin_mut().init_all(context);
+
+        Ok(())
+    }
+
+    pub fn stop(&mut self) -> Result<(), RuntimeError> {
+        Ok(())
     }
 }

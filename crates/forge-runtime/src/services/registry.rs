@@ -1,13 +1,9 @@
 use crate::services::{
-    command::CommandService, config::ConfigService, plugin::PluginService,
-    workspace::WorkspaceService,
+    command::{CommandHandle, CommandService},
+    config::{ConfigHandle, ConfigService},
+    plugin::PluginService,
+    workspace::{WorkspaceHandle, WorkspaceService},
 };
-
-// pub struct ServiceRegistryHandle {
-//     workspace: WorkspaceHandle,
-//     command: CommandHandle,
-//     config: ConfigHandle,
-// }
 
 pub struct ServiceRegistry {
     workspace: WorkspaceService,
@@ -18,11 +14,21 @@ pub struct ServiceRegistry {
 
 impl ServiceRegistry {
     pub fn new() -> Self {
+        let config = ConfigService::new();
+
         Self {
-            workspace: WorkspaceService::new(),
+            workspace: WorkspaceService::new(config.config()),
             command: CommandService::new(),
             plugin: PluginService::new(),
-            config: ConfigService::new(),
+            config,
+        }
+    }
+
+    pub fn handle(&self) -> ServiceRegistryHandle {
+        ServiceRegistryHandle {
+            workspace: self.workspace.handle(),
+            command: self.command.handle(),
+            config: self.config.handle(),
         }
     }
 
@@ -56,5 +62,26 @@ impl ServiceRegistry {
 
     pub fn command_mut(&mut self) -> &mut CommandService {
         &mut self.command
+    }
+}
+
+#[derive(Clone)]
+pub struct ServiceRegistryHandle {
+    workspace: WorkspaceHandle,
+    command: CommandHandle,
+    config: ConfigHandle,
+}
+
+impl ServiceRegistryHandle {
+    pub fn workspace(&self) -> &WorkspaceHandle {
+        &self.workspace
+    }
+
+    pub fn command(&self) -> &CommandHandle {
+        &self.command
+    }
+
+    pub fn config(&self) -> &ConfigHandle {
+        &self.config
     }
 }

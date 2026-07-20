@@ -1,13 +1,13 @@
-use crate::{handle::RuntimeHandle, services::registry::ServiceRegistry};
+use crate::{handle::RuntimeHandle, services::registry::ServiceRegistryHandle};
 
 #[derive(Clone)]
-pub struct RuntimeContext<'a> {
+pub struct RuntimeContext {
     handle: RuntimeHandle,
-    services: &'a ServiceRegistry,
+    services: ServiceRegistryHandle,
 }
 
-impl<'a> RuntimeContext<'a> {
-    pub(crate) fn new(handle: RuntimeHandle, services: &'a ServiceRegistry) -> Self {
+impl RuntimeContext {
+    pub(crate) fn new(handle: RuntimeHandle, services: ServiceRegistryHandle) -> Self {
         Self { handle, services }
     }
 
@@ -15,11 +15,7 @@ impl<'a> RuntimeContext<'a> {
         &self.handle
     }
 
-    pub fn services(&self) -> &ServiceRegistry {
+    pub fn services(&self) -> &ServiceRegistryHandle {
         &self.services
-    }
-
-    pub fn services_mut(&mut self) -> &mut ServiceRegistry {
-        self.services_mut()
     }
 }

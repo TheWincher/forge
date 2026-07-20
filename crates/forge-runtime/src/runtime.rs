@@ -1,13 +1,11 @@
 use std::time::Duration;
 
-use forge_config::Config;
-use forge_workspace::Workspace;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 
 use crate::{
     application::Application, context::RuntimeContext, dispatcher::EventDispatcher,
     error::RuntimeError, event::AppEvent, handle::RuntimeHandle, lifecycle::RuntimeState,
-    plugin::Plugin, signal::wait_for_shutdown, task_manager::TaskManager,
+    signal::wait_for_shutdown, task_manager::TaskManager,
 };
 
 pub enum RuntimeAction {
@@ -42,23 +40,18 @@ impl Runtime {
     }
 
     pub fn context(&self) -> RuntimeContext {
-        RuntimeContext::new(self.handle(), self.app.services())
+        RuntimeContext::new(self.handle(), self.app.services().handle())
     }
 
     pub fn run(&mut self) -> Result<(), RuntimeError> {
         self.transition_to(RuntimeState::Starting);
-        let _guard = self.tokio_runtime.enter();
-        let context = self.context();
-        self.app.services_mut().plugin_mut().init_all(&context);
-        self.enable_signal_handler();
+        self.start_runtime()?;
 
         self.transition_to(RuntimeState::Running);
-        let event_loop = Self::event_loop(&mut self.event_receiver);
-        self.tokio_runtime.block_on(event_loop)?;
+        self.run_event_loop()?;
 
         self.transition_to(RuntimeState::Stopping);
-        let shutdown = self.task_manager.shutdown(Duration::from_secs(5));
-        self.tokio_runtime.block_on(shutdown);
+        self.stop_runtime()?;
 
         self.transition_to(RuntimeState::Stopped);
 
@@ -67,6 +60,29 @@ impl Runtime {
 
     pub fn handle(&self) -> RuntimeHandle {
         RuntimeHandle::new(&self.event_sender)
+    }
+
+    fn start_runtime(&mut self) -> Result<(), RuntimeError> {
+        let _guard = self.tokio_runtime.enter();
+        let context = self.context();
+        self.app.start(&context)?;
+        self.enable_signal_handler();
+
+        Ok(())
+    }
+
+    fn run_event_loop(&mut self) -> Result<(), RuntimeError> {
+        let event_loop = Self::event_loop(&mut self.event_receiver);
+        self.tokio_runtime.block_on(event_loop)?;
+
+        Ok(())
+    }
+
+    fn stop_runtime(&mut self) -> Result<(), RuntimeError> {
+        let shutdown = self.task_manager.shutdown(Duration::from_secs(5));
+        self.tokio_runtime.block_on(shutdown);
+
+        Ok(())
     }
 
     async fn event_loop(receiver: &mut Receiver<AppEvent>) -> Result<(), RuntimeError> {
