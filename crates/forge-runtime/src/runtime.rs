@@ -3,9 +3,15 @@ use std::time::Duration;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 
 use crate::{
-    application::Application, context::RuntimeContext, dispatcher::EventDispatcher,
-    error::RuntimeError, event::AppEvent, handle::RuntimeHandle, lifecycle::RuntimeState,
-    signal::wait_for_shutdown, task_manager::TaskManager,
+    application::Application,
+    context::RuntimeContext,
+    dispatcher::EventDispatcher,
+    error::RuntimeError,
+    event::AppEvent,
+    handle::RuntimeHandle,
+    lifecycle::RuntimeState,
+    signal::wait_for_shutdown,
+    task_manager::{TaskHandle, TaskManager},
 };
 
 pub enum RuntimeAction {
@@ -16,7 +22,7 @@ pub enum RuntimeAction {
 pub struct Runtime {
     state: RuntimeState,
     app: Application,
-    task_manager: TaskManager,
+    task_handle: TaskHandle,
     tokio_runtime: tokio::runtime::Runtime,
     event_sender: Sender<AppEvent>,
     event_receiver: Receiver<AppEvent>,
@@ -27,12 +33,17 @@ impl Runtime {
         let tokio_runtime =
             tokio::runtime::Runtime::new().map_err(RuntimeError::TokioInitializationFailed)?;
 
+        let task_manager = TaskManager::new();
+        let task_handle = task_manager.handle();
+
+        tokio_runtime.spawn(task_manager.run());
+
         let (sender, receiver) = mpsc::channel::<AppEvent>(100);
 
         Ok(Self {
             state: RuntimeState::Created,
             app: Application::new(),
-            task_manager: TaskManager::new(),
+            task_handle,
             tokio_runtime,
             event_sender: sender,
             event_receiver: receiver,
@@ -40,12 +51,16 @@ impl Runtime {
     }
 
     pub fn context(&self) -> RuntimeContext {
-        RuntimeContext::new(self.handle(), self.app.services().handle())
+        RuntimeContext::new(
+            self.handle(),
+            self.app.services().handle(),
+            self.task_handle.clone(),
+        )
     }
 
-    pub fn run(&mut self) -> Result<(), RuntimeError> {
+    pub async fn run(&mut self) -> Result<(), RuntimeError> {
         self.transition_to(RuntimeState::Starting);
-        self.start_runtime()?;
+        self.start_runtime().await?;
 
         self.transition_to(RuntimeState::Running);
         self.run_event_loop()?;
@@ -62,11 +77,11 @@ impl Runtime {
         RuntimeHandle::new(&self.event_sender)
     }
 
-    fn start_runtime(&mut self) -> Result<(), RuntimeError> {
+    async fn start_runtime(&mut self) -> Result<(), RuntimeError> {
         let _guard = self.tokio_runtime.enter();
         let context = self.context();
         self.app.start(&context)?;
-        self.enable_signal_handler();
+        self.enable_signal_handler().await?;
 
         Ok(())
     }
@@ -80,8 +95,9 @@ impl Runtime {
 
     fn stop_runtime(&mut self) -> Result<(), RuntimeError> {
         self.app.stop()?;
-        let shutdown = self.task_manager.shutdown(Duration::from_secs(5));
-        self.tokio_runtime.block_on(shutdown);
+
+        let shutdown = self.task_handle.shutdown(Duration::from_secs(5));
+        self.tokio_runtime.block_on(shutdown)?;
 
         Ok(())
     }
@@ -106,14 +122,18 @@ impl Runtime {
         }
     }
 
-    fn enable_signal_handler(&mut self) {
+    async fn enable_signal_handler(&mut self) -> Result<(), RuntimeError> {
         let handle = self.handle();
 
-        self.task_manager.spawn(async move {
-            if let Err(error) = wait_for_shutdown(handle).await {
-                tracing::error!(?error, "Signal handler failed");
-            }
-        });
+        self.task_handle
+            .spawn(async move {
+                if let Err(error) = wait_for_shutdown(handle).await {
+                    tracing::error!(?error, "Signal handler failed");
+                }
+            })
+            .await?;
+
+        Ok(())
     }
 
     fn transition_to(&mut self, state: RuntimeState) {

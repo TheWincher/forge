@@ -14,9 +14,6 @@ impl ConfigService {
         }
     }
 
-    pub async fn config(&self) -> Config {
-        self.config.read().await.clone()
-    }
     pub fn handle(&self) -> ConfigHandle {
         ConfigHandle {
             config: Arc::clone(&self.config),
