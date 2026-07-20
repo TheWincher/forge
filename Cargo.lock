@@ -115,6 +115,7 @@ version = "0.1.0"
 name = "forge-runtime"
 version = "0.1.0"
 dependencies = [
+ "forge-command",
  "forge-config",
  "forge-core",
  "forge-workspace",
