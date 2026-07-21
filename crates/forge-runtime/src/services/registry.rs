@@ -118,3 +118,124 @@ impl ServiceRegistryHandle {
         &self.event
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    use forge_config::Config;
+
+    use super::*;
+    use crate::{
+        plugin::registrar::PluginRegistrar,
+        services::plugin::{PluginService, PluginServiceError},
+    };
+
+    struct EmptyPluginRegistrar;
+
+    impl PluginRegistrar for EmptyPluginRegistrar {
+        fn register(&self, _plugins: &mut PluginService) -> Result<(), PluginServiceError> {
+            Ok(())
+        }
+    }
+
+    fn create_registry() -> ServiceRegistry {
+        ServiceRegistry::new(Config::default(), &EmptyPluginRegistrar)
+            .expect("service registry should be created")
+    }
+
+    #[test]
+    fn creates_service_registry() {
+        let registry = create_registry();
+
+        let _workspace = registry.workspace();
+        let _command = registry.command();
+        let _event = registry.event();
+        let _config = registry.config();
+        let _plugin = registry.plugin();
+    }
+
+    #[test]
+    fn creates_service_registry_handle() {
+        let registry = create_registry();
+
+        let handle = registry.handle();
+
+        let _workspace = handle.workspace();
+        let _command = handle.command();
+        let _event = handle.event();
+        let _config = handle.config();
+    }
+
+    #[test]
+    fn event_handles_share_the_same_event_bus() {
+        #[derive(Debug)]
+        struct TestEvent;
+
+        let registry = create_registry();
+
+        let first_handle = registry.handle();
+        let second_handle = registry.handle();
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let listener_calls = Arc::clone(&calls);
+
+        first_handle
+            .event()
+            .subscribe::<TestEvent, _>(move |_: &TestEvent| {
+                listener_calls.fetch_add(1, Ordering::SeqCst);
+            });
+
+        second_handle.event().publish(&TestEvent);
+
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn registry_event_service_and_handle_share_the_same_event_bus() {
+        #[derive(Debug)]
+        struct TestEvent;
+
+        let registry = create_registry();
+        let handle = registry.handle();
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let listener_calls = Arc::clone(&calls);
+
+        registry
+            .event()
+            .subscribe::<TestEvent, _>(move |_: &TestEvent| {
+                listener_calls.fetch_add(1, Ordering::SeqCst);
+            });
+
+        handle.event().publish(&TestEvent);
+
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn event_subscription_is_visible_from_new_handles() {
+        #[derive(Debug)]
+        struct TestEvent;
+
+        let registry = create_registry();
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let listener_calls = Arc::clone(&calls);
+
+        registry
+            .handle()
+            .event()
+            .subscribe::<TestEvent, _>(move |_: &TestEvent| {
+                listener_calls.fetch_add(1, Ordering::SeqCst);
+            });
+
+        let new_handle = registry.handle();
+        new_handle.event().publish(&TestEvent);
+
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+}
