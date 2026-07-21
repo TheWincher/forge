@@ -8,13 +8,14 @@ license.workspace = true
 forge-core = { path = "../forge-core" }
 forge-config = { path = "../forge-config" }
 forge-workspace = { path = "../forge-workspace" }
+forge-event = { path = "../forge-event" }
 forge-command = { path = "../forge-command" }
 tokio = { version = "1", features = [
     "rt-multi-thread",
     "macros",
     "sync",
     "time",
-    "signal"
+    "signal",
 ] }
 thiserror = "2.0.19"
 tracing = "0.1.44"

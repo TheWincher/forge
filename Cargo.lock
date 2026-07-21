@@ -122,6 +122,7 @@ dependencies = [
  "forge-command",
  "forge-config",
  "forge-core",
+ "forge-event",
  "forge-workspace",
  "thiserror",
  "tokio",

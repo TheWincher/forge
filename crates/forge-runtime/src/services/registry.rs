@@ -1,4 +1,5 @@
 use forge_config::Config;
+use forge_event::{EventHandle, EventService};
 
 use crate::{
     plugin::registrar::PluginRegistrar,
@@ -21,6 +22,7 @@ pub struct ServiceRegistry {
     command: CommandService,
     plugin: PluginService,
     config: ConfigService,
+    event: EventService,
 }
 
 impl ServiceRegistry {
@@ -36,6 +38,7 @@ impl ServiceRegistry {
             workspace: WorkspaceService::new(&config),
             command: CommandService::new(),
             config: ConfigService::new(config),
+            event: EventService::new(),
             plugin,
         })
     }
@@ -45,6 +48,7 @@ impl ServiceRegistry {
             workspace: self.workspace.handle(),
             command: self.command.handle(),
             config: self.config.handle(),
+            event: self.event.handle(),
         }
     }
 
@@ -79,6 +83,14 @@ impl ServiceRegistry {
     pub fn command_mut(&mut self) -> &mut CommandService {
         &mut self.command
     }
+
+    pub fn event(&self) -> &EventService {
+        &self.event
+    }
+
+    pub fn event_mut(&mut self) -> &mut EventService {
+        &mut self.event
+    }
 }
 
 #[derive(Clone)]
@@ -86,6 +98,7 @@ pub struct ServiceRegistryHandle {
     workspace: WorkspaceHandle,
     command: CommandHandle,
     config: ConfigHandle,
+    event: EventHandle,
 }
 
 impl ServiceRegistryHandle {
@@ -99,5 +112,9 @@ impl ServiceRegistryHandle {
 
     pub fn config(&self) -> &ConfigHandle {
         &self.config
+    }
+
+    pub fn event(&self) -> &EventHandle {
+        &self.event
     }
 }
