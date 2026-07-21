@@ -37,10 +37,13 @@ impl ServiceRegistry {
         plugin.validate_dependencies()?;
 
         let event = EventService::new();
+        let editor = EditorService::new(event.handle());
+
+        editor.start();
 
         Ok(Self {
             workspace: WorkspaceService::new(&config, event.handle()),
-            editor: EditorService::new(event.handle()),
+            editor,
             command: CommandService::new(),
             config: ConfigService::new(config),
             event,
