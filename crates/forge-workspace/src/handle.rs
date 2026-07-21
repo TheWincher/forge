@@ -1,56 +1,12 @@
 use std::{path::PathBuf, sync::Arc};
 
-use forge_config::Config;
 use forge_event::EventHandle;
-use forge_workspace::{
-    ActiveDocumentChanged, Document, DocumentClosed, DocumentId, DocumentOpened, Workspace,
-    WorkspaceError, WorkspaceId,
-};
 use tokio::sync::RwLock;
 
-pub struct WorkspaceService {
-    workspace: Arc<RwLock<Option<Workspace>>>,
-    events: EventHandle,
-}
-
-impl WorkspaceService {
-    pub fn new(config: &Config, events: EventHandle) -> Self {
-        let workspace =
-            config
-                .workspace_root
-                .clone()
-                .and_then(|root| match Workspace::open(root) {
-                    Ok(workspace) => Some(workspace),
-                    Err(error) => {
-                        tracing::warn!(%error, "Failed to open workspace");
-                        None
-                    }
-                });
-
-        Self {
-            workspace: Arc::new(RwLock::new(workspace)),
-            events,
-        }
-    }
-
-    pub fn handle(&self) -> WorkspaceHandle {
-        WorkspaceHandle {
-            workspace: Arc::clone(&self.workspace),
-            events: self.events.clone(),
-        }
-    }
-}
-
-use thiserror::Error;
-
-#[derive(Debug, Error)]
-pub enum WorkspaceHandleError {
-    #[error("no workspace is currently open")]
-    WorkspaceNotOpen,
-
-    #[error(transparent)]
-    Workspace(#[from] WorkspaceError),
-}
+use crate::{
+    ActiveDocumentChanged, Document, DocumentClosed, DocumentId, DocumentOpened, Workspace,
+    WorkspaceId, error::WorkspaceHandleError,
+};
 
 #[derive(Clone)]
 pub struct WorkspaceHandle {
@@ -59,6 +15,10 @@ pub struct WorkspaceHandle {
 }
 
 impl WorkspaceHandle {
+    pub fn new(workspace: Arc<RwLock<Option<Workspace>>>, events: EventHandle) -> Self {
+        Self { workspace, events }
+    }
+
     pub async fn is_open(&self) -> bool {
         self.workspace.read().await.is_some()
     }

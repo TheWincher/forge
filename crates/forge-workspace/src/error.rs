@@ -27,3 +27,12 @@ pub enum WorkspaceError {
     #[error("workspace is closed")]
     WorkspaceClosed,
 }
+
+#[derive(Debug, Error)]
+pub enum WorkspaceHandleError {
+    #[error("no workspace is currently open")]
+    WorkspaceNotOpen,
+
+    #[error(transparent)]
+    Workspace(#[from] WorkspaceError),
+}

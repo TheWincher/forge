@@ -1,16 +1,21 @@
 mod documents;
 mod error;
 mod event;
+mod handle;
 mod id;
+mod service;
 mod state;
 mod workspace;
 
 pub use documents::Document;
 pub use documents::DocumentId;
 pub use error::WorkspaceError;
+pub use error::WorkspaceHandleError;
 pub use event::ActiveDocumentChanged;
 pub use event::DocumentClosed;
 pub use event::DocumentOpened;
+pub use handle::WorkspaceHandle;
 pub use id::WorkspaceId;
+pub use service::WorkspaceService;
 pub use state::WorkspaceState;
 pub use workspace::Workspace;

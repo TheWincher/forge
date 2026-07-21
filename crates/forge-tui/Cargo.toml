@@ -1,19 +1,18 @@
 [package]
-name = "forge-workspace"
+name = "forge-tui"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
-forge-config = { path = "../forge-config" }
-forge-event = { path = "../forge-event" }
+forge-editor = { path = "../forge-editor" }
+forge-workspace = { path = "../forge-workspace" }
+
+ratatui = "0.29"
+crossterm = "0.29"
 thiserror = "2.0.19"
 tokio = { version = "1", features = [
     "sync",
     "macros",
     "rt",
 ] }
-tracing = "0.1.44"
-
-[dev-dependencies]
-tempfile = "3"
