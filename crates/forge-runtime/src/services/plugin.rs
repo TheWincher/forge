@@ -244,6 +244,12 @@ impl PluginService {
     }
 }
 
+impl Default for PluginService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

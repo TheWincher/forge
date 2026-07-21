@@ -13,3 +13,9 @@ impl EventDispatcher {
         }
     }
 }
+
+impl Default for EventDispatcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}

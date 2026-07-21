@@ -10,5 +10,11 @@ impl CommandService {
     }
 }
 
+impl Default for CommandService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Clone)]
 pub struct CommandHandle {}
