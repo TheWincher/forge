@@ -11,6 +11,7 @@ forge-workspace = { path = "../forge-workspace" }
 ratatui = "0.29"
 crossterm = "0.29"
 thiserror = "2.0.19"
+tracing = "0.1.44"
 tokio = { version = "1", features = [
     "sync",
     "macros",

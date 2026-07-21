@@ -4,6 +4,7 @@ use tokio::{
     sync::{mpsc, oneshot},
     task::{JoinError, JoinSet},
 };
+use tokio_util::sync::CancellationToken;
 
 type BoxedTask = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 
@@ -18,18 +19,24 @@ enum TaskCommand {
 pub struct TaskManager {
     tasks: JoinSet<()>,
     command_receiver: mpsc::Receiver<TaskCommand>,
+    cancellation_token: CancellationToken,
 }
 
 impl TaskManager {
     pub fn new() -> (Self, TaskHandle) {
         let (command_sender, command_receiver) = mpsc::channel(100);
+        let cancellation_token = CancellationToken::new();
 
         (
             Self {
                 tasks: JoinSet::new(),
                 command_receiver,
+                cancellation_token: cancellation_token.clone(),
             },
-            TaskHandle { command_sender },
+            TaskHandle {
+                command_sender,
+                cancellation_token,
+            },
         )
     }
 
@@ -44,7 +51,13 @@ impl TaskManager {
 
                     match command {
                         TaskCommand::Spawn(task) => {
-                            self.tasks.spawn(task);
+                            let cancellation_token = self.cancellation_token.child_token();
+                            self.tasks.spawn(async move {
+                                tokio::select! {
+                                    _ = cancellation_token.cancelled() => {}
+                                    _ = task => {}
+                                }
+                            });
                         }
 
                         TaskCommand::Shutdown {
@@ -70,7 +83,8 @@ impl TaskManager {
 
     async fn shutdown_tasks(&mut self, timeout: Duration) {
         self.command_receiver.close();
-        self.drain_pending_tasks();
+        self.cancellation_token.cancel();
+        self.discard_pending_commands();
 
         let graceful_shutdown = async {
             while let Some(result) = self.tasks.join_next().await {
@@ -93,15 +107,15 @@ impl TaskManager {
         }
     }
 
-    fn drain_pending_tasks(&mut self) {
+    fn discard_pending_commands(&mut self) {
         while let Ok(command) = self.command_receiver.try_recv() {
             match command {
-                TaskCommand::Spawn(task) => {
-                    self.tasks.spawn(task);
+                TaskCommand::Spawn(_) => {
+                    tracing::debug!("Discarding pending task during shutdown");
                 }
 
-                TaskCommand::Shutdown { .. } => {
-                    tracing::warn!("Ignoring duplicate task manager shutdown command");
+                TaskCommand::Shutdown { response, .. } => {
+                    let _ = response.send(());
                 }
             }
         }
@@ -131,6 +145,7 @@ impl TaskManager {
 #[derive(Clone)]
 pub struct TaskHandle {
     command_sender: mpsc::Sender<TaskCommand>,
+    cancellation_token: CancellationToken,
 }
 
 impl TaskHandle {
@@ -158,6 +173,10 @@ impl TaskHandle {
         response_receiver
             .await
             .map_err(|_| TaskError::ShutdownResponseDropped)
+    }
+
+    pub fn cancellation_token(&self) -> CancellationToken {
+        self.cancellation_token.child_token()
     }
 }
 

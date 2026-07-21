@@ -1,12 +1,19 @@
 use std::io::{self, Stdout};
 
 use crossterm::{
+    event::{self, Event, KeyCode, KeyEventKind},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
 
 use crate::{app::TuiApp, error::TuiError, ui};
+
+#[derive(PartialEq)]
+pub enum ControlFlow {
+    Continue,
+    Exit,
+}
 
 pub struct Tui {
     terminal: Terminal<CrosstermBackend<Stdout>>,
@@ -28,14 +35,38 @@ impl Tui {
 
     pub async fn run(&mut self) -> Result<(), TuiError> {
         loop {
-            let buffer = self.app.active_buffer().await?;
+            self.render().await?;
 
-            self.terminal.draw(|frame| {
-                ui::render(frame, buffer.as_ref());
-            })?;
-
-            tokio::time::sleep(std::time::Duration::from_millis(16)).await;
+            match self.handle_events()? {
+                ControlFlow::Continue => {}
+                ControlFlow::Exit => break,
+            }
         }
+
+        Ok(())
+    }
+
+    fn handle_events(&mut self) -> Result<ControlFlow, TuiError> {
+        match event::read()? {
+            Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
+                KeyCode::Char('q') => {
+                    tracing::debug!("q pressed");
+                    Ok(ControlFlow::Exit)
+                }
+                _ => Ok(ControlFlow::Continue),
+            },
+            _ => Ok(ControlFlow::Continue),
+        }
+    }
+
+    async fn render(&mut self) -> Result<(), TuiError> {
+        let buffer = self.app.active_buffer().await?;
+
+        self.terminal.draw(|frame| {
+            ui::render(frame, buffer.as_ref());
+        })?;
+
+        Ok(())
     }
 }
 

@@ -1,0 +1,10 @@
+[2m2026-07-21T21:50:07.705912Z[0m [32m INFO[0m [2mforge_runtime::runtime[0m[2m:[0m Runtime state changed [3mfrom[0m[2m=[0mCreated [3mto[0m[2m=[0mStarting
+[2m2026-07-21T21:50:07.705960Z[0m [32m INFO[0m [2mforge_runtime::runtime[0m[2m:[0m Runtime state changed [3mfrom[0m[2m=[0mStarting [3mto[0m[2m=[0mRunning
+[2m2026-07-21T21:50:09.676075Z[0m [32m INFO[0m [2mforge_runtime::runtime[0m[2m:[0m Runtime state changed [3mfrom[0m[2m=[0mRunning [3mto[0m[2m=[0mStopping
+[2m2026-07-21T21:50:14.677416Z[0m [33m WARN[0m [2mforge_runtime::task_manager[0m[2m:[0m Task shutdown timeout reached, aborting remaining tasks [3mtimeout[0m[2m=[0m5s
+[2m2026-07-21T21:50:14.677511Z[0m [32m INFO[0m [2mforge_runtime::runtime[0m[2m:[0m Runtime state changed [3mfrom[0m[2m=[0mStopping [3mto[0m[2m=[0mStopped
+[2m2026-07-21T22:14:26.124566Z[0m [32m INFO[0m [2mforge_runtime::runtime[0m[2m:[0m Runtime state changed [3mfrom[0m[2m=[0mCreated [3mto[0m[2m=[0mStarting
+[2m2026-07-21T22:14:26.124623Z[0m [32m INFO[0m [2mforge_runtime::runtime[0m[2m:[0m Runtime state changed [3mfrom[0m[2m=[0mStarting [3mto[0m[2m=[0mRunning
+[2m2026-07-21T22:14:27.018503Z[0m [32m INFO[0m [2mforge_runtime::runtime[0m[2m:[0m Runtime state changed [3mfrom[0m[2m=[0mRunning [3mto[0m[2m=[0mStopping
+[2m2026-07-21T22:14:27.018727Z[0m [32m INFO[0m [2mforge_runtime::task_manager[0m[2m:[0m All tasks completed cleanly
+[2m2026-07-21T22:14:27.018789Z[0m [32m INFO[0m [2mforge_runtime::runtime[0m[2m:[0m Runtime state changed [3mfrom[0m[2m=[0mStopping [3mto[0m[2m=[0mStopped

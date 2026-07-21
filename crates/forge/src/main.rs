@@ -1,9 +1,12 @@
+use std::fs::OpenOptions;
+
 use forge_runtime::runtime::Runtime;
 use forge_tui::Tui;
 use forge_tui::TuiApp;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    init_logging();
     let mut runtime = Runtime::new()?;
     let runtime_handle = runtime.handle();
 
@@ -21,11 +24,24 @@ async fn main() -> anyhow::Result<()> {
         }
 
         result = tui.run() => {
-            result?;
+            tracing::debug!("tui stopped");
             runtime_handle.shutdown()?;
+            tracing::debug!("shutdown requested");
             runtime_task.await??;
+            tracing::debug!("runtime stopped");
+            result?;
         }
     }
 
     Ok(())
+}
+
+fn init_logging() {
+    let file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("forge.log")
+        .unwrap();
+
+    tracing_subscriber::fmt().with_writer(file).init();
 }
