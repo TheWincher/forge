@@ -1,9 +1,9 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use crate::{Command, CommandDescriptor, CommandError};
 
 pub struct CommandRegistry {
-    commands: HashMap<&'static str, Box<dyn Command>>,
+    commands: HashMap<&'static str, Arc<dyn Command>>,
 }
 
 impl CommandRegistry {
@@ -23,7 +23,7 @@ impl CommandRegistry {
             return Err(CommandError::DuplicateCommandId { command_id });
         }
 
-        self.commands.insert(command_id, Box::new(command));
+        self.commands.insert(command_id, Arc::new(command));
 
         Ok(())
     }
@@ -53,6 +53,15 @@ impl CommandRegistry {
 
     pub fn descriptors(&self) -> impl Iterator<Item = &'static CommandDescriptor> + '_ {
         self.commands.values().map(|command| command.descriptor())
+    }
+
+    pub fn get(&self, command_id: &str) -> Result<Arc<dyn Command>, CommandError> {
+        self.commands
+            .get(command_id)
+            .cloned()
+            .ok_or_else(|| CommandError::CommandNotFound {
+                command_id: command_id.to_owned(),
+            })
     }
 }
 

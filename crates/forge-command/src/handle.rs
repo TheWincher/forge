@@ -22,7 +22,12 @@ impl CommandHandle {
     }
 
     pub async fn execute(&self, command_id: &str) -> Result<(), CommandError> {
-        self.registry.read().await.execute(command_id)
+        let command = {
+            let registry = self.registry.read().await;
+            registry.get(command_id)?
+        };
+
+        command.execute()
     }
 
     pub async fn contains(&self, command_id: &str) -> bool {
