@@ -65,6 +65,7 @@ name = "forge-command"
 version = "0.1.0"
 dependencies = [
  "thiserror",
+ "tokio",
 ]
 
 [[package]]
