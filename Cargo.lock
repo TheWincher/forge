@@ -98,6 +98,7 @@ version = "0.1.0"
 name = "forge-editor"
 version = "0.1.0"
 dependencies = [
+ "forge-event",
  "forge-workspace",
  "tempfile",
  "thiserror",

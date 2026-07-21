@@ -1,19 +1,64 @@
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
-use forge_workspace::DocumentId;
+use forge_event::EventHandle;
+use forge_workspace::{DocumentClosed, DocumentId, DocumentOpened};
 use tokio::sync::RwLock;
 
 use crate::{buffer::DocumentBuffer, error::EditorError, snapshot::DocumentBufferSnapshot};
 
 pub struct EditorService {
     buffers: Arc<RwLock<HashMap<DocumentId, DocumentBuffer>>>,
+    events: EventHandle,
 }
 
 impl EditorService {
-    pub fn new() -> Self {
+    pub fn new(events: EventHandle) -> Self {
         Self {
             buffers: Arc::new(RwLock::new(HashMap::new())),
+            events,
         }
+    }
+
+    pub fn start(&self) {
+        let editor = self.handle();
+
+        self.events
+            .subscribe::<DocumentOpened, _>(move |event: &DocumentOpened| {
+                let editor = editor.clone();
+                let document_id = event.document_id;
+                let path = event.path.clone();
+
+                tokio::spawn(async move {
+                    if let Err(error) = editor.open_buffer(document_id, path).await {
+                        tracing::error!(
+                            document_id = ?document_id,
+                            error = %error,
+                            "failed to open editor buffer"
+                        );
+                    }
+                });
+            });
+
+        let editor = self.handle();
+
+        self.events
+            .subscribe::<DocumentClosed, _>(move |event: &DocumentClosed| {
+                let editor = editor.clone();
+                let document_id = event.document_id;
+
+                tokio::spawn(async move {
+                    match editor.close_buffer(document_id).await {
+                        Ok(()) | Err(EditorError::BufferNotOpen(_)) => {}
+                        Err(error) => {
+                            tracing::error!(
+                                document_id = ?document_id,
+                                error = %error,
+                                "failed to close editor buffer"
+                            );
+                        }
+                    }
+                });
+            });
     }
 
     pub fn handle(&self) -> EditorHandle {
@@ -108,5 +153,179 @@ impl EditorHandle {
         } else {
             Err(EditorError::BufferNotOpen(document_id))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{fs, future::Future, time::Duration};
+
+    use forge_event::EventService;
+    use forge_workspace::{DocumentClosed, DocumentId, DocumentOpened, WorkspaceId};
+    use tempfile::tempdir;
+    use tokio::time::{sleep, timeout};
+
+    use super::EditorService;
+    use crate::error::EditorError;
+
+    async fn wait_until<F, Fut>(mut condition: F)
+    where
+        F: FnMut() -> Fut,
+        Fut: Future<Output = bool>,
+    {
+        timeout(Duration::from_secs(1), async {
+            loop {
+                if condition().await {
+                    return;
+                }
+
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("condition was not satisfied before timeout");
+    }
+
+    #[tokio::test]
+    async fn should_open_buffer_when_document_opened_event_is_published() {
+        let directory = tempdir().expect("failed to create temporary directory");
+        let path = directory.path().join("document.txt");
+
+        fs::write(&path, "Hello, Forge!").expect("failed to create temporary file");
+
+        let events = EventService::new();
+        let event_handle = events.handle();
+
+        let editor_service = EditorService::new(event_handle.clone());
+        editor_service.start();
+
+        let editor = editor_service.handle();
+        let document_id = DocumentId::new();
+
+        event_handle.publish(&DocumentOpened {
+            workspace_id: WorkspaceId::new(),
+            document_id,
+            path: path.clone(),
+        });
+
+        wait_until(|| {
+            let editor = editor.clone();
+
+            async move { editor.buffer(document_id).await.is_ok() }
+        })
+        .await;
+
+        let buffer = editor
+            .buffer(document_id)
+            .await
+            .expect("buffer should be open");
+
+        assert_eq!(buffer.document_id, document_id);
+        assert_eq!(buffer.path, path);
+        assert_eq!(buffer.content, "Hello, Forge!");
+        assert_eq!(buffer.version, 0);
+        assert!(!buffer.dirty);
+    }
+
+    #[tokio::test]
+    async fn should_close_buffer_when_document_closed_event_is_published() {
+        let directory = tempdir().expect("failed to create temporary directory");
+        let path = directory.path().join("document.txt");
+
+        fs::write(&path, "Hello, Forge!").expect("failed to create temporary file");
+
+        let events = EventService::new();
+        let event_handle = events.handle();
+
+        let editor_service = EditorService::new(event_handle.clone());
+        editor_service.start();
+
+        let editor = editor_service.handle();
+        let workspace_id = WorkspaceId::new();
+        let document_id = DocumentId::new();
+
+        event_handle.publish(&DocumentOpened {
+            workspace_id,
+            document_id,
+            path,
+        });
+
+        wait_until(|| {
+            let editor = editor.clone();
+
+            async move { editor.buffer(document_id).await.is_ok() }
+        })
+        .await;
+
+        event_handle.publish(&DocumentClosed {
+            workspace_id,
+            document_id,
+        });
+
+        wait_until(|| {
+            let editor = editor.clone();
+
+            async move {
+                matches!(
+                    editor.buffer(document_id).await,
+                    Err(EditorError::BufferNotOpen(id)) if id == document_id
+                )
+            }
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn should_ignore_document_closed_event_for_unknown_buffer() {
+        let events = EventService::new();
+        let event_handle = events.handle();
+
+        let editor_service = EditorService::new(event_handle.clone());
+        editor_service.start();
+
+        let editor = editor_service.handle();
+        let document_id = DocumentId::new();
+
+        event_handle.publish(&DocumentClosed {
+            workspace_id: WorkspaceId::new(),
+            document_id,
+        });
+
+        tokio::task::yield_now().await;
+
+        let result = editor.buffer(document_id).await;
+
+        assert!(matches!(
+            result,
+            Err(EditorError::BufferNotOpen(id)) if id == document_id
+        ));
+    }
+
+    #[tokio::test]
+    async fn should_not_open_buffer_when_document_file_cannot_be_read() {
+        let directory = tempdir().expect("failed to create temporary directory");
+        let path = directory.path().join("missing.txt");
+
+        let events = EventService::new();
+        let event_handle = events.handle();
+
+        let editor_service = EditorService::new(event_handle.clone());
+        editor_service.start();
+
+        let editor = editor_service.handle();
+        let document_id = DocumentId::new();
+
+        event_handle.publish(&DocumentOpened {
+            workspace_id: WorkspaceId::new(),
+            document_id,
+            path,
+        });
+
+        tokio::task::yield_now().await;
+
+        assert!(matches!(
+            editor.buffer(document_id).await,
+            Err(EditorError::BufferNotOpen(id)) if id == document_id
+        ));
     }
 }

@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 forge-workspace = { path = "../forge-workspace" }
+forge-event = { path = "../forge-event" }
 tokio = { version = "1", features = [
     "sync",
     "macros",

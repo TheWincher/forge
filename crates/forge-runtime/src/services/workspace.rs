@@ -106,7 +106,8 @@ impl WorkspaceHandle {
 
         let workspace_id = workspace.id();
         let previous = workspace.active_document().map(Document::id);
-        let document_id = workspace.open_document(path)?;
+        let path = path.into();
+        let document_id = workspace.open_document(&path)?;
         let current = workspace.active_document().map(Document::id);
 
         drop(guard);
@@ -114,6 +115,7 @@ impl WorkspaceHandle {
         self.events.publish(&DocumentOpened {
             document_id,
             workspace_id,
+            path,
         });
 
         if previous != current {

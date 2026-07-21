@@ -1,9 +1,12 @@
+use std::path::PathBuf;
+
 use crate::{DocumentId, WorkspaceId};
 
 #[derive(Debug, Clone)]
 pub struct DocumentOpened {
     pub workspace_id: WorkspaceId,
     pub document_id: DocumentId,
+    pub path: PathBuf,
 }
 
 #[derive(Debug, Clone)]
