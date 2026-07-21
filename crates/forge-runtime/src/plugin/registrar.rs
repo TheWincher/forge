@@ -7,7 +7,7 @@ pub trait PluginRegistrar {
 pub struct DefaultPluginRegistrar;
 
 impl PluginRegistrar for DefaultPluginRegistrar {
-    fn register(&self, plugins: &mut PluginService) -> Result<(), PluginServiceError> {
+    fn register(&self, _plugins: &mut PluginService) -> Result<(), PluginServiceError> {
         // plugins.register(WorkspacePlugin::new())?;
         // plugins.register(EditorPlugin::new())?;
         // plugins.register(GitPlugin::new())?;

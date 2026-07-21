@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use crate::{
     context::RuntimeContext,
     plugin::{
+        builtin::{Plugin, PluginError},
         descriptor::PluginDescriptor,
-        plugin::{Plugin, PluginError},
     },
 };
 
@@ -257,8 +257,8 @@ mod tests {
     use crate::{
         context::RuntimeContext,
         plugin::{
+            builtin::{Plugin, PluginError},
             descriptor::PluginDescriptor,
-            plugin::{Plugin, PluginError},
         },
     };
 

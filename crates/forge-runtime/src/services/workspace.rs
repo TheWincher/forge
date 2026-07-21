@@ -1,10 +1,7 @@
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{path::PathBuf, sync::Arc};
 
 use forge_config::Config;
-use forge_workspace::{Workspace, WorkspaceId};
+use forge_workspace::{Document, DocumentId, Workspace, WorkspaceError, WorkspaceId};
 use tokio::sync::RwLock;
 
 pub struct WorkspaceService {
@@ -41,8 +38,11 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum WorkspaceHandleError {
-    #[error("failed to open workspace")]
-    OpenFailed(#[source] forge_workspace::WorkspaceError),
+    #[error("no workspace is currently open")]
+    WorkspaceNotOpen,
+
+    #[error(transparent)]
+    Workspace(#[from] WorkspaceError),
 }
 
 #[derive(Clone)]
@@ -63,28 +63,88 @@ impl WorkspaceHandle {
             .map(|workspace| workspace.root().to_path_buf())
     }
 
-    pub async fn open(&self, root: impl AsRef<Path>) -> Result<(), WorkspaceHandleError> {
-        let workspace = Workspace::open(root.as_ref().to_path_buf())
-            .map_err(WorkspaceHandleError::OpenFailed)?;
+    pub async fn open(&self, root: impl Into<PathBuf>) -> Result<(), WorkspaceHandleError> {
+        let workspace = Workspace::open(root)?;
 
         *self.workspace.write().await = Some(workspace);
 
         Ok(())
     }
 
-    pub async fn close(&self) {
-        let mut workspace = self.workspace.write().await;
+    pub async fn close(&self) -> Result<(), WorkspaceHandleError> {
+        let mut guard = self.workspace.write().await;
+        let workspace = guard
+            .as_mut()
+            .ok_or(WorkspaceHandleError::WorkspaceNotOpen)?;
 
-        if let Some(current) = workspace.as_mut()
-            && let Err(error) = current.close()
-        {
-            tracing::warn!(%error, "Failed to close workspace");
-        }
+        workspace.close()?;
+        *guard = None;
 
-        *workspace = None;
+        Ok(())
     }
 
     pub async fn id(&self) -> Option<WorkspaceId> {
         self.workspace.read().await.as_ref().map(Workspace::id)
+    }
+
+    pub async fn open_document(
+        &self,
+        path: impl Into<PathBuf>,
+    ) -> Result<DocumentId, WorkspaceHandleError> {
+        let mut guard = self.workspace.write().await;
+        let workspace = guard
+            .as_mut()
+            .ok_or(WorkspaceHandleError::WorkspaceNotOpen)?;
+
+        Ok(workspace.open_document(path)?)
+    }
+
+    pub async fn close_document(&self, id: DocumentId) -> Result<(), WorkspaceHandleError> {
+        let mut guard = self.workspace.write().await;
+        let workspace = guard
+            .as_mut()
+            .ok_or(WorkspaceHandleError::WorkspaceNotOpen)?;
+
+        workspace.close_document(id)?;
+
+        Ok(())
+    }
+
+    pub async fn set_active_document(&self, id: DocumentId) -> Result<(), WorkspaceHandleError> {
+        let mut guard = self.workspace.write().await;
+        let workspace = guard
+            .as_mut()
+            .ok_or(WorkspaceHandleError::WorkspaceNotOpen)?;
+
+        workspace.set_active_document(id)?;
+
+        Ok(())
+    }
+
+    pub async fn document(&self, id: DocumentId) -> Result<Option<Document>, WorkspaceHandleError> {
+        let guard = self.workspace.read().await;
+        let workspace = guard
+            .as_ref()
+            .ok_or(WorkspaceHandleError::WorkspaceNotOpen)?;
+
+        Ok(workspace.document(id).cloned())
+    }
+
+    pub async fn documents(&self) -> Result<Vec<Document>, WorkspaceHandleError> {
+        let guard = self.workspace.read().await;
+        let workspace = guard
+            .as_ref()
+            .ok_or(WorkspaceHandleError::WorkspaceNotOpen)?;
+
+        Ok(workspace.documents().cloned().collect())
+    }
+
+    pub async fn active_document(&self) -> Result<Option<Document>, WorkspaceHandleError> {
+        let guard = self.workspace.read().await;
+        let workspace = guard
+            .as_ref()
+            .ok_or(WorkspaceHandleError::WorkspaceNotOpen)?;
+
+        Ok(workspace.active_document().cloned())
     }
 }

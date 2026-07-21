@@ -59,9 +59,7 @@ mod tests {
     use crate::EventService;
 
     #[derive(Debug)]
-    struct TestEvent {
-        value: usize,
-    }
+    struct TestEvent {}
 
     #[derive(Debug)]
     struct OtherEvent;
@@ -85,7 +83,7 @@ mod tests {
             publisher.publish(&OtherEvent);
         });
 
-        handle.publish(&TestEvent { value: 42 });
+        handle.publish(&TestEvent {});
 
         assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
