@@ -6,6 +6,11 @@ license.workspace = true
 
 [dependencies]
 forge-workspace = { path = "../forge-workspace" }
+tokio = { version = "1", features = [
+    "sync",
+    "macros",
+    "rt",
+] }
 tracing = "0.1.44"
 thiserror = "2.0.19"
 

@@ -101,6 +101,7 @@ dependencies = [
  "forge-workspace",
  "tempfile",
  "thiserror",
+ "tokio",
  "tracing",
 ]
 

@@ -1,5 +1,6 @@
 use std::{io, path::PathBuf};
 
+use forge_workspace::DocumentId;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -20,4 +21,10 @@ pub enum EditorError {
         #[source]
         source: io::Error,
     },
+
+    #[error("buffer already open: {0}")]
+    BufferAlreadyOpen(DocumentId),
+
+    #[error("buffer not open: {0}")]
+    BufferNotOpen(DocumentId),
 }
