@@ -28,17 +28,6 @@ impl CommandRegistry {
         Ok(())
     }
 
-    pub fn execute(&self, command_id: &str) -> Result<(), CommandError> {
-        let command =
-            self.commands
-                .get(command_id)
-                .ok_or_else(|| CommandError::CommandNotFound {
-                    command_id: command_id.to_owned(),
-                })?;
-
-        command.execute()
-    }
-
     pub fn contains(&self, command_id: &str) -> bool {
         self.commands.contains_key(command_id)
     }
@@ -117,19 +106,24 @@ mod tests {
     }
 
     #[test]
-    fn executes_registered_command() {
+    fn gets_registered_command() {
         let mut registry = CommandRegistry::new();
 
         registry.register(TestCommand).unwrap();
 
-        assert!(registry.execute("test.command").is_ok());
+        let command = registry.get("test.command").unwrap();
+
+        assert_eq!(command.descriptor(), &TEST_DESCRIPTOR);
     }
 
     #[test]
     fn rejects_unknown_command() {
         let registry = CommandRegistry::new();
 
-        let error = registry.execute("unknown.command").unwrap_err();
+        let error = match registry.get("unknown.command") {
+            Ok(_) => panic!("expected CommandNotFound error"),
+            Err(error) => error,
+        };
 
         assert!(matches!(
             error,

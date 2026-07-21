@@ -42,3 +42,48 @@ impl CommandHandle {
         self.registry.read().await.is_empty()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::{CommandDescriptor, CommandError};
+
+    const TEST_DESCRIPTOR: CommandDescriptor =
+        CommandDescriptor::new("test.command", "Test command");
+
+    struct TestCommand;
+
+    impl Command for TestCommand {
+        fn descriptor(&self) -> &'static CommandDescriptor {
+            &TEST_DESCRIPTOR
+        }
+
+        fn execute(&self) -> Result<(), CommandError> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn cloned_handles_share_commands() {
+        let registry = Arc::new(RwLock::new(CommandRegistry::new()));
+
+        let first = CommandHandle::new(Arc::clone(&registry));
+        let second = first.clone();
+
+        first.register(TestCommand).await.unwrap();
+
+        assert!(second.contains("test.command").await);
+        assert_eq!(second.len().await, 1);
+    }
+
+    #[tokio::test]
+    async fn executes_command_from_handle() {
+        let registry = Arc::new(RwLock::new(CommandRegistry::new()));
+        let handle = CommandHandle::new(registry);
+
+        handle.register(TestCommand).await.unwrap();
+
+        assert!(handle.execute("test.command").await.is_ok());
+    }
+}
