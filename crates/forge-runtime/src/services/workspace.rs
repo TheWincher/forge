@@ -4,7 +4,7 @@ use std::{
 };
 
 use forge_config::Config;
-use forge_workspace::Workspace;
+use forge_workspace::{Workspace, WorkspaceId};
 use tokio::sync::RwLock;
 
 pub struct WorkspaceService {
@@ -73,6 +73,18 @@ impl WorkspaceHandle {
     }
 
     pub async fn close(&self) {
-        *self.workspace.write().await = None;
+        let mut workspace = self.workspace.write().await;
+
+        if let Some(current) = workspace.as_mut()
+            && let Err(error) = current.close()
+        {
+            tracing::warn!(%error, "Failed to close workspace");
+        }
+
+        *workspace = None;
+    }
+
+    pub async fn id(&self) -> Option<WorkspaceId> {
+        self.workspace.read().await.as_ref().map(Workspace::id)
     }
 }
