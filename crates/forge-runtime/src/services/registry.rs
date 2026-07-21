@@ -34,11 +34,13 @@ impl ServiceRegistry {
         registrar.register(&mut plugin)?;
         plugin.validate_dependencies()?;
 
+        let event = EventService::new();
+
         Ok(Self {
-            workspace: WorkspaceService::new(&config),
+            workspace: WorkspaceService::new(&config, event.handle()),
             command: CommandService::new(),
             config: ConfigService::new(config),
-            event: EventService::new(),
+            event,
             plugin,
         })
     }

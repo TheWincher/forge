@@ -1,15 +1,20 @@
 use std::{path::PathBuf, sync::Arc};
 
 use forge_config::Config;
-use forge_workspace::{Document, DocumentId, Workspace, WorkspaceError, WorkspaceId};
+use forge_event::EventHandle;
+use forge_workspace::{
+    ActiveDocumentChanged, Document, DocumentClosed, DocumentId, DocumentOpened, Workspace,
+    WorkspaceError, WorkspaceId,
+};
 use tokio::sync::RwLock;
 
 pub struct WorkspaceService {
     workspace: Arc<RwLock<Option<Workspace>>>,
+    events: EventHandle,
 }
 
 impl WorkspaceService {
-    pub fn new(config: &Config) -> Self {
+    pub fn new(config: &Config, events: EventHandle) -> Self {
         let workspace =
             config
                 .workspace_root
@@ -24,12 +29,14 @@ impl WorkspaceService {
 
         Self {
             workspace: Arc::new(RwLock::new(workspace)),
+            events,
         }
     }
 
     pub fn handle(&self) -> WorkspaceHandle {
         WorkspaceHandle {
             workspace: Arc::clone(&self.workspace),
+            events: self.events.clone(),
         }
     }
 }
@@ -48,6 +55,7 @@ pub enum WorkspaceHandleError {
 #[derive(Clone)]
 pub struct WorkspaceHandle {
     workspace: Arc<RwLock<Option<Workspace>>>,
+    events: EventHandle,
 }
 
 impl WorkspaceHandle {
@@ -96,7 +104,27 @@ impl WorkspaceHandle {
             .as_mut()
             .ok_or(WorkspaceHandleError::WorkspaceNotOpen)?;
 
-        Ok(workspace.open_document(path)?)
+        let workspace_id = workspace.id();
+        let previous = workspace.active_document().map(Document::id);
+        let document_id = workspace.open_document(path)?;
+        let current = workspace.active_document().map(Document::id);
+
+        drop(guard);
+
+        self.events.publish(&DocumentOpened {
+            document_id,
+            workspace_id,
+        });
+
+        if previous != current {
+            self.events.publish(&ActiveDocumentChanged {
+                workspace_id,
+                previous,
+                current,
+            });
+        }
+
+        Ok(document_id)
     }
 
     pub async fn close_document(&self, id: DocumentId) -> Result<(), WorkspaceHandleError> {
@@ -105,7 +133,25 @@ impl WorkspaceHandle {
             .as_mut()
             .ok_or(WorkspaceHandleError::WorkspaceNotOpen)?;
 
+        let workspace_id = workspace.id();
+        let previous = workspace.active_document().map(Document::id);
+        let current = workspace.active_document().map(Document::id);
         workspace.close_document(id)?;
+
+        drop(guard);
+
+        self.events.publish(&DocumentClosed {
+            document_id: id,
+            workspace_id,
+        });
+
+        if previous != current {
+            self.events.publish(&ActiveDocumentChanged {
+                workspace_id,
+                previous,
+                current,
+            });
+        }
 
         Ok(())
     }
@@ -116,7 +162,21 @@ impl WorkspaceHandle {
             .as_mut()
             .ok_or(WorkspaceHandleError::WorkspaceNotOpen)?;
 
+        let workspace_id = workspace.id();
+        let previous = workspace.active_document().map(Document::id);
         workspace.set_active_document(id)?;
+
+        let current = workspace.active_document().map(Document::id);
+
+        drop(guard);
+
+        if previous != current {
+            self.events.publish(&ActiveDocumentChanged {
+                workspace_id,
+                previous,
+                current,
+            });
+        }
 
         Ok(())
     }
