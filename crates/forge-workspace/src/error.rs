@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
+use crate::DocumentId;
+
 #[derive(Error, Debug)]
 pub enum WorkspaceError {
     #[error("Folder not found or it is a file: {0}")]
@@ -9,4 +11,19 @@ pub enum WorkspaceError {
 
     #[error("workspace is already closed")]
     AlreadyClosed,
+
+    #[error("document not found: {0:?}")]
+    DocumentNotFound(DocumentId),
+
+    #[error("file not found: {0}")]
+    FileNotFound(PathBuf),
+
+    #[error("document already open: {0}")]
+    DocumentAlreadyOpen(PathBuf),
+
+    #[error("document is outside of workspace: {0}")]
+    DocumentOutsideWorkspace(PathBuf),
+
+    #[error("workspace is closed")]
+    WorkspaceClosed,
 }
