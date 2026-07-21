@@ -48,3 +48,45 @@ impl EventHandle {
             .listener_count::<E>()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    use crate::EventService;
+
+    #[derive(Debug)]
+    struct TestEvent {
+        value: usize,
+    }
+
+    #[derive(Debug)]
+    struct OtherEvent;
+
+    #[test]
+    fn listener_can_publish_another_event() {
+        let service = EventService::new();
+        let handle = service.handle();
+
+        let calls = Arc::new(AtomicUsize::new(0));
+
+        let second_event_calls = Arc::clone(&calls);
+
+        handle.subscribe::<OtherEvent, _>(move |_: &OtherEvent| {
+            second_event_calls.fetch_add(1, Ordering::SeqCst);
+        });
+
+        let publisher = handle.clone();
+
+        handle.subscribe::<TestEvent, _>(move |_: &TestEvent| {
+            publisher.publish(&OtherEvent);
+        });
+
+        handle.publish(&TestEvent { value: 42 });
+
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+}
