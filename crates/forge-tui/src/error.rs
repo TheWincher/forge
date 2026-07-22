@@ -14,4 +14,7 @@ pub enum TuiError {
 
     #[error(transparent)]
     Io(#[from] io::Error),
+
+    #[error("event task failed")]
+    Join(#[from] tokio::task::JoinError),
 }

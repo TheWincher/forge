@@ -1,4 +1,7 @@
-use std::io::{self, Stdout};
+use std::{
+    io::{self, Stdout},
+    time::Duration,
+};
 
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind},
@@ -37,7 +40,7 @@ impl Tui {
         loop {
             self.render().await?;
 
-            match self.handle_events()? {
+            match self.handle_events().await? {
                 ControlFlow::Continue => {}
                 ControlFlow::Exit => break,
             }
@@ -46,17 +49,23 @@ impl Tui {
         Ok(())
     }
 
-    fn handle_events(&mut self) -> Result<ControlFlow, TuiError> {
-        match event::read()? {
-            Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
-                KeyCode::Char('q') => {
-                    tracing::debug!("q pressed");
-                    Ok(ControlFlow::Exit)
-                }
+    async fn handle_events(&mut self) -> Result<ControlFlow, TuiError> {
+        tokio::task::spawn_blocking(|| {
+            if !event::poll(Duration::from_millis(50))? {
+                return Ok(ControlFlow::Continue);
+            }
+
+            match event::read()? {
+                Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
+                    KeyCode::Char('q') => Ok(ControlFlow::Exit),
+                    _ => Ok(ControlFlow::Continue),
+                },
+
                 _ => Ok(ControlFlow::Continue),
-            },
-            _ => Ok(ControlFlow::Continue),
-        }
+            }
+        })
+        .await
+        .map_err(TuiError::Join)?
     }
 
     async fn render(&mut self) -> Result<(), TuiError> {

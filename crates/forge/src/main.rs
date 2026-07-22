@@ -16,24 +16,36 @@ async fn main() -> anyhow::Result<()> {
     let app = TuiApp::new(workspace.clone(), editor);
     let mut tui = Tui::new(app)?;
 
-    let mut runtime_task = tokio::task::spawn_blocking(move || runtime.run());
+    let runtime_task = tokio::task::spawn_blocking(move || runtime.run());
 
-    runtime_handle.wait_until_running().await?;
+    let application_result: anyhow::Result<()> = async {
+        runtime_handle.wait_until_running().await?;
 
-    workspace.open(std::env::current_dir()?).await?;
-    workspace.open_document("crates/forge/src/main.rs").await?;
+        let workspace_root = std::env::current_dir()?;
 
-    tokio::select! {
-        result = &mut runtime_task => {
-            result??;
-        }
+        workspace.open(workspace_root.clone()).await?;
+        workspace.open_document("crates/forge/src/main.rs").await?;
 
-        result = tui.run() => {
-            runtime_handle.shutdown()?;
-            runtime_task.await??;
-            result?;
-        }
+        tui.run().await?;
+
+        Ok(())
     }
+    .await;
+
+    let shutdown_result = runtime_handle.shutdown();
+    if let Err(error) = &shutdown_result {
+        tracing::error!(?error, "Failed to request runtime shutdown");
+    }
+
+    let runtime_result = runtime_task.await;
+    if let Err(error) = &runtime_result {
+        tracing::error!(?error, "Runtime task failed to join");
+    }
+
+    application_result?;
+
+    shutdown_result?;
+    runtime_result??;
 
     Ok(())
 }
