@@ -1,7 +1,10 @@
 use std::time::Duration;
 
 use forge_config::Config;
-use tokio::sync::mpsc::{self, Receiver, Sender};
+use tokio::sync::{
+    mpsc::{self, Receiver, Sender},
+    watch,
+};
 
 use crate::{
     application::Application,
@@ -25,9 +28,10 @@ pub struct Runtime {
     state: RuntimeState,
     app: Application,
     task_handle: TaskHandle,
-    tokio_runtime: tokio::runtime::Runtime,
+    tokio_handle: tokio::runtime::Handle,
     event_sender: Sender<AppEvent>,
     event_receiver: Receiver<AppEvent>,
+    state_sender: watch::Sender<RuntimeState>,
 }
 
 impl Runtime {
@@ -42,21 +46,22 @@ impl Runtime {
         let config = Config::load();
         let app = Application::new(config, registrar)?;
 
-        let tokio_runtime =
-            tokio::runtime::Runtime::new().map_err(RuntimeError::TokioInitializationFailed)?;
+        let tokio_handle = tokio::runtime::Handle::current();
 
         let (task_manager, task_handle) = TaskManager::new();
-        tokio_runtime.spawn(task_manager.run());
+        tokio_handle.spawn(task_manager.run());
 
         let (sender, receiver) = mpsc::channel::<AppEvent>(100);
+        let (state_sender, _state_receiver) = watch::channel(RuntimeState::Created);
 
         Ok(Self {
             state: RuntimeState::Created,
             app,
             task_handle,
-            tokio_runtime,
+            tokio_handle,
             event_sender: sender,
             event_receiver: receiver,
+            state_sender,
         })
     }
 
@@ -113,14 +118,14 @@ impl Runtime {
     }
 
     pub fn handle(&self) -> RuntimeHandle {
-        RuntimeHandle::new(&self.event_sender)
+        RuntimeHandle::new(&self.event_sender, self.state_sender.subscribe())
     }
 
     fn start_runtime(&mut self) -> Result<(), RuntimeError> {
         let runtime_handle = self.handle();
         let task_handle = self.task_handle.clone();
 
-        self.tokio_runtime
+        self.tokio_handle
             .block_on(Self::enable_signal_handler(task_handle, runtime_handle))?;
 
         let context = self.context();
@@ -131,7 +136,7 @@ impl Runtime {
 
     fn run_event_loop(&mut self) -> Result<(), RuntimeError> {
         let event_loop = Self::event_loop(&mut self.event_receiver);
-        self.tokio_runtime.block_on(event_loop)?;
+        self.tokio_handle.block_on(event_loop)?;
 
         Ok(())
     }
@@ -141,7 +146,7 @@ impl Runtime {
         self.app.stop(&context)?;
 
         let shutdown = self.task_handle.shutdown(Duration::from_secs(5));
-        self.tokio_runtime.block_on(shutdown)?;
+        self.tokio_handle.block_on(shutdown)?;
 
         Ok(())
     }
@@ -189,5 +194,6 @@ impl Runtime {
         );
 
         self.state = state;
+        let _ = self.state_sender.send(state);
     }
 }

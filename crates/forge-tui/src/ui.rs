@@ -6,7 +6,13 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
-pub fn render(frame: &mut Frame, buffer: Option<&DocumentBufferSnapshot>) {
+use crate::editor_state::EditorState;
+
+pub fn render(
+    frame: &mut Frame,
+    buffer: Option<&DocumentBufferSnapshot>,
+    editor_state: &EditorState,
+) {
     let areas = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -17,7 +23,7 @@ pub fn render(frame: &mut Frame, buffer: Option<&DocumentBufferSnapshot>) {
         .split(frame.area());
 
     render_header(frame, areas[0], buffer);
-    render_editor(frame, areas[1], buffer);
+    render_editor(frame, areas[1], buffer, editor_state);
     render_status_bar(frame, areas[2], buffer);
 }
 
@@ -40,6 +46,7 @@ fn render_editor(
     frame: &mut Frame,
     area: ratatui::layout::Rect,
     buffer: Option<&DocumentBufferSnapshot>,
+    editor_state: &EditorState,
 ) {
     let content = match buffer {
         Some(buffer) => Text::from(buffer.content.to_string()),
@@ -50,6 +57,16 @@ fn render_editor(
         Paragraph::new(content).block(Block::default().borders(Borders::LEFT | Borders::RIGHT));
 
     frame.render_widget(editor, area);
+
+    if buffer.is_some() {
+        let cursor_x = area.x + 1 + editor_state.cursor_column() as u16;
+
+        let cursor_y = area.y + editor_state.cursor_line() as u16;
+
+        if cursor_x < area.right() && cursor_y < area.bottom() {
+            frame.set_cursor_position((cursor_x, cursor_y));
+        }
+    }
 }
 
 fn render_status_bar(

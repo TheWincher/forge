@@ -66,6 +66,7 @@ impl WorkspaceHandle {
 
         let workspace_id = workspace.id();
         let previous = workspace.active_document().map(Document::id);
+        tracing::info!("previous: {:?}", previous);
         let path = path.into();
         let document_id = workspace.open_document(&path)?;
         let current = workspace.active_document().map(Document::id);

@@ -1,4 +1,5 @@
 pub mod app;
+mod editor_state;
 pub mod error;
 pub mod tui;
 pub mod ui;

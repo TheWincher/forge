@@ -75,6 +75,16 @@ impl Workspace {
             return Err(WorkspaceError::WorkspaceClosed);
         }
 
+        let path = if path.is_absolute() {
+            path
+        } else {
+            self.root.join(path)
+        };
+
+        let path = path
+            .canonicalize()
+            .map_err(|_| WorkspaceError::FileNotFound(path))?;
+
         if !path.starts_with(&self.root) {
             return Err(WorkspaceError::DocumentOutsideWorkspace(path));
         }
