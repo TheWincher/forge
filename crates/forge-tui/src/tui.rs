@@ -61,9 +61,10 @@ impl Tui {
 
     async fn render(&mut self) -> Result<(), TuiError> {
         let buffer = self.app.active_buffer().await?;
+        let editor_state = self.app.editor_state();
 
         self.terminal.draw(|frame| {
-            ui::render(frame, buffer.as_ref());
+            ui::render(frame, buffer.as_ref(), editor_state);
         })?;
 
         Ok(())

@@ -1,16 +1,21 @@
 use forge_editor::{DocumentBufferSnapshot, EditorError, EditorHandle};
 use forge_workspace::{WorkspaceHandle, WorkspaceHandleError};
 
-use crate::error::TuiError;
+use crate::{editor_state::EditorState, error::TuiError};
 
 pub struct TuiApp {
     workspace: WorkspaceHandle,
     editor: EditorHandle,
+    editor_state: EditorState,
 }
 
 impl TuiApp {
     pub fn new(workspace: WorkspaceHandle, editor: EditorHandle) -> Self {
-        Self { workspace, editor }
+        Self {
+            workspace,
+            editor,
+            editor_state: EditorState::default(),
+        }
     }
 
     pub async fn active_buffer(&self) -> Result<Option<DocumentBufferSnapshot>, TuiError> {
@@ -39,5 +44,13 @@ impl TuiApp {
 
             Err(error) => Err(error.into()),
         }
+    }
+
+    pub fn editor_state(&self) -> &EditorState {
+        &self.editor_state
+    }
+
+    pub fn editor_state_mut(&mut self) -> &mut EditorState {
+        &mut self.editor_state
     }
 }

@@ -7,6 +7,12 @@ use crate::{application::ApplicationError, event::AppEvent, task_manager::TaskEr
 
 #[derive(Error, Debug)]
 pub enum RuntimeError {
+    #[error("failed to start")]
+    FailedToStart,
+
+    #[error("state channel closed")]
+    StateChannelClosed,
+
     #[error("failed to initialize Tokio runtime")]
     TokioInitializationFailed(#[source] std::io::Error),
 

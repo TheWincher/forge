@@ -8,6 +8,7 @@ impl EventDispatcher {
     }
 
     pub async fn dispatch(&self, event: AppEvent) -> Result<RuntimeAction, RuntimeError> {
+        tracing::debug!(%event, "dispatch event");
         match event {
             AppEvent::ShutdownRequested => Ok(RuntimeAction::Stop),
         }

@@ -27,7 +27,8 @@ impl Default for DocumentId {
 
 impl fmt::Display for DocumentId {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "{}", self.0)
+        write!(formatter, "{}", self.0)?;
+        Ok(())
     }
 }
 

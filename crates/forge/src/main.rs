@@ -13,10 +13,15 @@ async fn main() -> anyhow::Result<()> {
     let workspace = runtime.context().services().workspace().clone();
     let editor = runtime.context().services().editor().clone();
 
-    let app = TuiApp::new(workspace.clone(), editor.clone());
+    let app = TuiApp::new(workspace.clone(), editor);
     let mut tui = Tui::new(app)?;
 
     let mut runtime_task = tokio::task::spawn_blocking(move || runtime.run());
+
+    runtime_handle.wait_until_running().await?;
+
+    workspace.open(std::env::current_dir()?).await?;
+    workspace.open_document("crates/forge/src/main.rs").await?;
 
     tokio::select! {
         result = &mut runtime_task => {
@@ -24,11 +29,8 @@ async fn main() -> anyhow::Result<()> {
         }
 
         result = tui.run() => {
-            tracing::debug!("tui stopped");
             runtime_handle.shutdown()?;
-            tracing::debug!("shutdown requested");
             runtime_task.await??;
-            tracing::debug!("runtime stopped");
             result?;
         }
     }
