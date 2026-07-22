@@ -1,30 +1,46 @@
 use forge_editor::DocumentBufferSnapshot;
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout},
-    text::{Line, Text},
+    layout::{Constraint, Layout, Rect},
     widgets::{Block, Borders, Paragraph},
 };
 
 use crate::editor_state::EditorState;
 
+pub struct LayoutAreas {
+    pub header: Rect,
+    pub editor: Rect,
+    pub status: Rect,
+}
+
+pub fn layout(area: Rect) -> LayoutAreas {
+    let areas = Layout::vertical([
+        Constraint::Length(3),
+        Constraint::Min(1),
+        Constraint::Length(1),
+    ])
+    .split(area);
+
+    LayoutAreas {
+        header: areas[0],
+        editor: areas[1],
+        status: areas[2],
+    }
+}
+
+pub fn editor_content_area(area: Rect) -> Rect {
+    Block::default().borders(Borders::ALL).inner(area)
+}
+
 pub fn render(
     frame: &mut Frame,
+    layout: &LayoutAreas,
     buffer: Option<&DocumentBufferSnapshot>,
     editor_state: &EditorState,
 ) {
-    let areas = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(1),
-            Constraint::Length(1),
-        ])
-        .split(frame.area());
-
-    render_header(frame, areas[0], buffer);
-    render_editor(frame, areas[1], buffer, editor_state);
-    render_status_bar(frame, areas[2], buffer);
+    render_header(frame, layout.header, buffer);
+    render_editor(frame, layout.editor, buffer, editor_state);
+    render_status_bar(frame, layout.status, buffer);
 }
 
 fn render_header(
@@ -44,28 +60,46 @@ fn render_header(
 
 fn render_editor(
     frame: &mut Frame,
-    area: ratatui::layout::Rect,
+    area: Rect,
     buffer: Option<&DocumentBufferSnapshot>,
     editor_state: &EditorState,
 ) {
-    let content = match buffer {
-        Some(buffer) => Text::from(buffer.content.to_string()),
-        None => Text::from(Line::from("Aucun document ouvert")),
+    let block = Block::default().borders(Borders::ALL).title(" Editor ");
+
+    let inner_area = block.inner(area);
+
+    frame.render_widget(block, area);
+
+    let Some(buffer) = buffer else {
+        return;
     };
 
-    let editor =
-        Paragraph::new(content).block(Block::default().borders(Borders::LEFT | Borders::RIGHT));
+    let viewport = editor_state.viewport();
 
-    frame.render_widget(editor, area);
+    let visible_content = buffer
+        .content
+        .lines()
+        .skip(viewport.scroll_y())
+        .take(inner_area.height as usize)
+        .map(|line| {
+            line.chars()
+                .skip(viewport.scroll_x())
+                .take(inner_area.width as usize)
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
 
-    if buffer.is_some() {
-        let cursor_x = area.x + 1 + editor_state.cursor_column() as u16;
+    frame.render_widget(Paragraph::new(visible_content), inner_area);
 
-        let cursor_y = area.y + editor_state.cursor_line() as u16;
+    let cursor = editor_state.cursor();
 
-        if cursor_x < area.right() && cursor_y < area.bottom() {
-            frame.set_cursor_position((cursor_x, cursor_y));
-        }
+    let cursor_x = inner_area.x + cursor.column().saturating_sub(viewport.scroll_x()) as u16;
+
+    let cursor_y = inner_area.y + cursor.line().saturating_sub(viewport.scroll_y()) as u16;
+
+    if cursor_x < inner_area.right() && cursor_y < inner_area.bottom() {
+        frame.set_cursor_position((cursor_x, cursor_y));
     }
 }
 

@@ -1,25 +1,30 @@
+use crate::{cursor::Cursor, viewport::Viewport};
+
 #[derive(Debug, Default)]
 pub struct EditorState {
-    cursor_line: usize,
-    cursor_column: usize,
-    scroll_x: usize,
-    scroll_y: usize,
+    cursor: Cursor,
+    viewport: Viewport,
 }
 
 impl EditorState {
-    pub fn cursor_line(&self) -> usize {
-        self.cursor_line
+    pub fn cursor(&self) -> &Cursor {
+        &self.cursor
     }
 
-    pub fn cursor_column(&self) -> usize {
-        self.cursor_column
+    pub fn cursor_mut(&mut self) -> &mut Cursor {
+        &mut self.cursor
     }
 
-    pub fn scroll_x(&self) -> usize {
-        self.scroll_x
+    pub fn viewport(&self) -> &Viewport {
+        &self.viewport
     }
 
-    pub fn scroll_y(&self) -> usize {
-        self.scroll_y
+    pub fn resize_viewport(&mut self, width: usize, height: usize) {
+        self.viewport.resize(width, height);
+        self.viewport.ensure_cursor_visible(&self.cursor);
+    }
+
+    pub fn ensure_cursor_visible(&mut self) {
+        self.viewport.ensure_cursor_visible(&self.cursor);
     }
 }
