@@ -40,7 +40,7 @@ pub fn render(
 ) {
     render_header(frame, layout.header, buffer);
     render_editor(frame, layout.editor, buffer, editor_state);
-    render_status_bar(frame, layout.status, buffer);
+    render_status_bar(frame, layout.status, buffer, editor_state);
 }
 
 fn render_header(
@@ -107,13 +107,15 @@ fn render_status_bar(
     frame: &mut Frame,
     area: ratatui::layout::Rect,
     buffer: Option<&DocumentBufferSnapshot>,
+    editor_state: &EditorState,
 ) {
     let status = match buffer {
         Some(buffer) => {
             let dirty = if buffer.dirty { " [+]" } else { "" };
 
             format!(
-                " NORMAL | {}{} | version {} | q: quitter ",
+                " {:?} | {}{} | version {} | q: quitter ",
+                editor_state.mode(),
                 buffer.path.display(),
                 dirty,
                 buffer.version,

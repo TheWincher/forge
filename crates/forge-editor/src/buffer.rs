@@ -6,6 +6,12 @@ use std::{
 
 use crate::error::EditorError;
 
+pub enum BackspaceResult {
+    Noop,
+    CharacterDeleted,
+    LinesJoined { line: usize, column: usize },
+}
+
 #[derive(Debug)]
 pub struct DocumentBuffer {
     document_id: DocumentId,
@@ -74,6 +80,103 @@ impl DocumentBuffer {
         self.dirty = false;
 
         Ok(())
+    }
+
+    pub fn insert_charracter(&mut self, line: usize, column: usize, character: char) -> bool {
+        let Some(byte_index) = Self::position_to_byte_index(&self.content, line, column) else {
+            return false;
+        };
+
+        self.content.insert(byte_index, character);
+        self.mark_modified();
+        true
+    }
+
+    fn position_to_byte_index(
+        content: &str,
+        target_line: usize,
+        target_column: usize,
+    ) -> Option<usize> {
+        let mut current_line = 0;
+        let mut current_column = 0;
+
+        for (byte_index, character) in content.char_indices() {
+            if current_line == target_line && current_column == target_column {
+                return Some(byte_index);
+            }
+
+            if character == '\n' {
+                current_line += 1;
+                current_column = 0;
+            } else {
+                current_column += 1;
+            }
+        }
+
+        if current_line == target_line && current_column == target_column {
+            Some(content.len())
+        } else {
+            None
+        }
+    }
+
+    pub fn backspace(&mut self, line: usize, column: usize) -> BackspaceResult {
+        if line == 0 && column == 0 {
+            return BackspaceResult::Noop;
+        }
+
+        if column > 0 {
+            let Some(byte_index) = Self::position_to_byte_index(&self.content, line, column) else {
+                return BackspaceResult::Noop;
+            };
+
+            let previous_bytes_index = self.content[..byte_index]
+                .char_indices()
+                .next_back()
+                .map(|(index, _)| index);
+
+            let Some(previous_byte_index) = previous_bytes_index else {
+                return BackspaceResult::Noop;
+            };
+
+            self.content
+                .replace_range(previous_byte_index..byte_index, "");
+
+            self.mark_modified();
+
+            return BackspaceResult::CharacterDeleted;
+        }
+
+        let previous_line = line - 1;
+        let previous_line_length = self
+            .content
+            .lines()
+            .nth(previous_line)
+            .map(str::chars)
+            .map(Iterator::count)
+            .unwrap_or(0);
+
+        let Some(line_start) = Self::position_to_byte_index(&self.content, line, 0) else {
+            return BackspaceResult::Noop;
+        };
+
+        let newline_index = line_start.saturating_sub(1);
+        if self.content.as_bytes().get(newline_index) != Some(&b'\n') {
+            return BackspaceResult::Noop;
+        };
+
+        self.content.remove(newline_index);
+        self.mark_modified();
+
+        BackspaceResult::LinesJoined {
+            line: previous_line,
+            column: previous_line_length,
+        }
+    }
+
+    fn mark_modified(&mut self) {
+        self.version += 1;
+        self.dirty = true;
     }
 }
 

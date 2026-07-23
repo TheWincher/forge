@@ -4,10 +4,11 @@ use std::{
 };
 
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind},
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
+use forge_editor::EditorMode;
 use ratatui::{Terminal, backend::CrosstermBackend, layout::Rect};
 
 use crate::{app::TuiApp, error::TuiError, ui};
@@ -64,10 +65,21 @@ impl Tui {
             return Ok(ControlFlow::Continue);
         };
 
+        match self.app.editor_state().mode() {
+            EditorMode::Normal => self.handle_events_normal(event).await,
+            EditorMode::Insert => self.handle_events_insert(event).await,
+        }
+    }
+
+    async fn handle_events_normal(&mut self, event: Event) -> Result<ControlFlow, TuiError> {
         match event {
             Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
                 KeyCode::Char('q') => {
                     return Ok(ControlFlow::Exit);
+                }
+
+                KeyCode::Char('i') => {
+                    self.app.editor_state_mut().enter_insert_mode();
                 }
 
                 KeyCode::Left | KeyCode::Char('h') => {
@@ -84,6 +96,32 @@ impl Tui {
 
                 KeyCode::Down | KeyCode::Char('j') => {
                     self.app.move_cursor_down().await?;
+                }
+
+                _ => {}
+            },
+
+            _ => {}
+        }
+
+        Ok(ControlFlow::Continue)
+    }
+
+    async fn handle_events_insert(&mut self, event: Event) -> Result<ControlFlow, TuiError> {
+        match event {
+            Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
+                KeyCode::Esc => {
+                    self.app.editor_state_mut().enter_normal_mode();
+                }
+
+                KeyCode::Char(c) => {
+                    if !key.modifiers.contains(KeyModifiers::CONTROL) {
+                        self.app.insert_character(c).await?;
+                    }
+                }
+
+                KeyCode::Backspace => {
+                    self.app.backspace().await?;
                 }
 
                 _ => {}

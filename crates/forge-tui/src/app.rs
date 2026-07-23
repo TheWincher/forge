@@ -1,4 +1,4 @@
-use forge_editor::{DocumentBufferSnapshot, EditorError, EditorHandle};
+use forge_editor::{BackspaceResult, DocumentBufferSnapshot, EditorError, EditorHandle};
 use forge_workspace::{WorkspaceHandle, WorkspaceHandleError};
 
 use crate::{editor_state::EditorState, error::TuiError};
@@ -113,6 +113,58 @@ impl TuiApp {
         self.editor_state
             .cursor_mut()
             .move_down(line_count, target_line_length);
+
+        self.editor_state.ensure_cursor_visible();
+
+        Ok(())
+    }
+
+    pub async fn insert_character(&mut self, character: char) -> Result<(), TuiError> {
+        let Some(buffer) = self.active_buffer().await? else {
+            return Ok(());
+        };
+
+        let document_id = buffer.document_id;
+        let line = self.editor_state.cursor().line();
+        let column = self.editor_state.cursor().column();
+
+        let inserted = self
+            .editor
+            .insert_character(document_id, line, column, character)
+            .await?;
+
+        if inserted {
+            self.editor_state.cursor_mut().move_right_unbounded();
+            self.editor_state.ensure_cursor_visible();
+        }
+
+        Ok(())
+    }
+
+    pub async fn backspace(&mut self) -> Result<(), TuiError> {
+        let Some(buffer) = self.active_buffer().await? else {
+            return Ok(());
+        };
+
+        let line = self.editor_state.cursor().line();
+        let column = self.editor_state.cursor().column();
+
+        let result = self
+            .editor
+            .backspace(buffer.document_id, line, column)
+            .await?;
+
+        match result {
+            BackspaceResult::Noop => {}
+
+            BackspaceResult::CharacterDeleted => {
+                self.editor_state.cursor_mut().move_left();
+            }
+
+            BackspaceResult::LinesJoined { line, column } => {
+                self.editor_state.cursor_mut().move_to(line, column);
+            }
+        }
 
         self.editor_state.ensure_cursor_visible();
 

@@ -4,7 +4,11 @@ use forge_event::EventHandle;
 use forge_workspace::{DocumentClosed, DocumentId, DocumentOpened};
 use tokio::sync::RwLock;
 
-use crate::{buffer::DocumentBuffer, error::EditorError, snapshot::DocumentBufferSnapshot};
+use crate::{
+    buffer::{BackspaceResult, DocumentBuffer},
+    error::EditorError,
+    snapshot::DocumentBufferSnapshot,
+};
 
 pub struct EditorService {
     buffers: Arc<RwLock<HashMap<DocumentId, DocumentBuffer>>>,
@@ -153,6 +157,37 @@ impl EditorHandle {
         } else {
             Err(EditorError::BufferNotOpen(document_id))
         }
+    }
+
+    pub async fn insert_character(
+        &self,
+        document_id: DocumentId,
+        line: usize,
+        column: usize,
+        character: char,
+    ) -> Result<bool, EditorError> {
+        let mut buffers = self.buffers.write().await;
+
+        let buffer = buffers
+            .get_mut(&document_id)
+            .ok_or(EditorError::BufferNotOpen(document_id))?;
+
+        Ok(buffer.insert_charracter(line, column, character))
+    }
+
+    pub async fn backspace(
+        &self,
+        document_id: DocumentId,
+        line: usize,
+        column: usize,
+    ) -> Result<BackspaceResult, EditorError> {
+        let mut buffers = self.buffers.write().await;
+
+        let buffer = buffers
+            .get_mut(&document_id)
+            .ok_or(EditorError::BufferNotOpen(document_id))?;
+
+        Ok(buffer.backspace(line, column))
     }
 }
 

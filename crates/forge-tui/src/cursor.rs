@@ -32,4 +32,13 @@ impl Cursor {
             self.column = self.column.min(target_line_length);
         }
     }
+
+    pub fn move_to(&mut self, line: usize, column: usize) {
+        self.line = line;
+        self.column = column;
+    }
+
+    pub fn move_right_unbounded(&mut self) {
+        self.column += 1;
+    }
 }
