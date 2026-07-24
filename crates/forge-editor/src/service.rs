@@ -5,7 +5,7 @@ use forge_workspace::{DocumentClosed, DocumentId, DocumentOpened};
 use tokio::sync::RwLock;
 
 use crate::{
-    buffer::{BackspaceResult, DocumentBuffer},
+    buffer::{BackspaceResult, CursorPosition, DocumentBuffer},
     error::EditorError,
     snapshot::DocumentBufferSnapshot,
 };
@@ -162,8 +162,7 @@ impl EditorHandle {
     pub async fn insert_character(
         &self,
         document_id: DocumentId,
-        line: usize,
-        column: usize,
+        position: CursorPosition,
         character: char,
     ) -> Result<bool, EditorError> {
         let mut buffers = self.buffers.write().await;
@@ -172,14 +171,13 @@ impl EditorHandle {
             .get_mut(&document_id)
             .ok_or(EditorError::BufferNotOpen(document_id))?;
 
-        Ok(buffer.insert_charracter(line, column, character))
+        Ok(buffer.insert_charracter(position, character))
     }
 
     pub async fn backspace(
         &self,
         document_id: DocumentId,
-        line: usize,
-        column: usize,
+        position: CursorPosition,
     ) -> Result<BackspaceResult, EditorError> {
         let mut buffers = self.buffers.write().await;
 
@@ -187,7 +185,21 @@ impl EditorHandle {
             .get_mut(&document_id)
             .ok_or(EditorError::BufferNotOpen(document_id))?;
 
-        Ok(buffer.backspace(line, column))
+        Ok(buffer.backspace(position))
+    }
+
+    pub async fn insert_newline(
+        &self,
+        document_id: DocumentId,
+        position: CursorPosition,
+    ) -> Result<CursorPosition, EditorError> {
+        let mut buffers = self.buffers.write().await;
+
+        let buffer = buffers
+            .get_mut(&document_id)
+            .ok_or(EditorError::BufferNotOpen(document_id))?;
+
+        Ok(buffer.insert_newline(position))
     }
 }
 

@@ -6,6 +6,11 @@ use std::{
 
 use crate::error::EditorError;
 
+pub struct CursorPosition {
+    pub line: usize,
+    pub column: usize,
+}
+
 pub enum BackspaceResult {
     Noop,
     CharacterDeleted,
@@ -82,8 +87,10 @@ impl DocumentBuffer {
         Ok(())
     }
 
-    pub fn insert_charracter(&mut self, line: usize, column: usize, character: char) -> bool {
-        let Some(byte_index) = Self::position_to_byte_index(&self.content, line, column) else {
+    pub fn insert_charracter(&mut self, position: CursorPosition, character: char) -> bool {
+        let Some(byte_index) =
+            Self::position_to_byte_index(&self.content, position.line, position.column)
+        else {
             return false;
         };
 
@@ -120,13 +127,15 @@ impl DocumentBuffer {
         }
     }
 
-    pub fn backspace(&mut self, line: usize, column: usize) -> BackspaceResult {
-        if line == 0 && column == 0 {
+    pub fn backspace(&mut self, position: CursorPosition) -> BackspaceResult {
+        if position.line == 0 && position.column == 0 {
             return BackspaceResult::Noop;
         }
 
-        if column > 0 {
-            let Some(byte_index) = Self::position_to_byte_index(&self.content, line, column) else {
+        if position.column > 0 {
+            let Some(byte_index) =
+                Self::position_to_byte_index(&self.content, position.line, position.column)
+            else {
                 return BackspaceResult::Noop;
             };
 
@@ -147,7 +156,7 @@ impl DocumentBuffer {
             return BackspaceResult::CharacterDeleted;
         }
 
-        let previous_line = line - 1;
+        let previous_line = position.line - 1;
         let previous_line_length = self
             .content
             .lines()
@@ -156,7 +165,7 @@ impl DocumentBuffer {
             .map(Iterator::count)
             .unwrap_or(0);
 
-        let Some(line_start) = Self::position_to_byte_index(&self.content, line, 0) else {
+        let Some(line_start) = Self::position_to_byte_index(&self.content, position.line, 0) else {
             return BackspaceResult::Noop;
         };
 
@@ -171,6 +180,22 @@ impl DocumentBuffer {
         BackspaceResult::LinesJoined {
             line: previous_line,
             column: previous_line_length,
+        }
+    }
+
+    pub fn insert_newline(&mut self, position: CursorPosition) -> CursorPosition {
+        let Some(byte_index) =
+            Self::position_to_byte_index(&self.content, position.line, position.column)
+        else {
+            return position;
+        };
+
+        self.content.insert(byte_index, '\n');
+        self.mark_modified();
+
+        CursorPosition {
+            line: position.line + 1,
+            column: 0,
         }
     }
 

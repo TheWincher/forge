@@ -125,12 +125,13 @@ impl TuiApp {
         };
 
         let document_id = buffer.document_id;
-        let line = self.editor_state.cursor().line();
-        let column = self.editor_state.cursor().column();
-
         let inserted = self
             .editor
-            .insert_character(document_id, line, column, character)
+            .insert_character(
+                document_id,
+                self.editor_state.cursor().position(),
+                character,
+            )
             .await?;
 
         if inserted {
@@ -146,12 +147,9 @@ impl TuiApp {
             return Ok(());
         };
 
-        let line = self.editor_state.cursor().line();
-        let column = self.editor_state.cursor().column();
-
         let result = self
             .editor
-            .backspace(buffer.document_id, line, column)
+            .backspace(buffer.document_id, self.editor_state.cursor().position())
             .await?;
 
         match result {
@@ -165,6 +163,25 @@ impl TuiApp {
                 self.editor_state.cursor_mut().move_to(line, column);
             }
         }
+
+        self.editor_state.ensure_cursor_visible();
+
+        Ok(())
+    }
+
+    pub async fn insert_newline(&mut self) -> Result<(), TuiError> {
+        let Some(buffer) = self.active_buffer().await? else {
+            return Ok(());
+        };
+
+        let position = self
+            .editor
+            .insert_newline(buffer.document_id, self.editor_state.cursor().position())
+            .await?;
+
+        self.editor_state
+            .cursor_mut()
+            .move_to(position.line, position.column);
 
         self.editor_state.ensure_cursor_visible();
 

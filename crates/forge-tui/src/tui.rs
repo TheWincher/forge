@@ -124,6 +124,10 @@ impl Tui {
                     self.app.backspace().await?;
                 }
 
+                KeyCode::Enter => {
+                    self.app.insert_newline().await?;
+                }
+
                 _ => {}
             },
 

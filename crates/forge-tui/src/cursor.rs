@@ -1,3 +1,5 @@
+use forge_editor::CursorPosition;
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Cursor {
     line: usize,
@@ -11,6 +13,13 @@ impl Cursor {
 
     pub fn column(&self) -> usize {
         self.column
+    }
+
+    pub fn position(&self) -> CursorPosition {
+        CursorPosition {
+            line: self.line,
+            column: self.column,
+        }
     }
 
     pub fn move_left(&mut self) {
